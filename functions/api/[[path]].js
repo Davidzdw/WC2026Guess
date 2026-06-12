@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   lastSyncAt: null,
   autoSyncEnabled: true,
   autoSyncMinutes: 60,
+  maxUsers: 50,
 };
 
 function nowIso() {
@@ -66,7 +67,7 @@ function chinaTimeFromMs(ms) {
 
 function parseSetting(key, value) {
   if (value == null) return DEFAULT_SETTINGS[key];
-  if (["stakeAmount", "lockMinutes", "autoSyncMinutes"].includes(key)) return Number(value);
+  if (["stakeAmount", "lockMinutes", "autoSyncMinutes", "maxUsers"].includes(key)) return Number(value);
   if (key === "autoSyncEnabled") return value === "true";
   if (key === "lastSyncAt") return value || null;
   return value;
@@ -320,6 +321,25 @@ function allTimeLeaderboard(settlements) {
 async function predictionCount(db) {
   const row = await db.prepare("SELECT COUNT(*) AS count FROM predictions").first();
   return Number(row?.count || 0);
+}
+
+async function adminUsers(db) {
+  const rows = await db
+    .prepare(
+      `SELECT u.id, u.name, u.created_at, u.updated_at, COUNT(p.match_id) AS prediction_count
+       FROM users u
+       LEFT JOIN predictions p ON p.user_id = u.id
+       GROUP BY u.id
+       ORDER BY u.created_at ASC`
+    )
+    .all();
+  return (rows.results || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    predictionCount: Number(row.prediction_count || 0),
+  }));
 }
 
 async function stateFor(db, userId, options = {}) {
@@ -644,6 +664,16 @@ async function handleApi(context) {
     const id = String(body.userId || crypto.randomUUID());
     const name = String(body.name || "").trim().slice(0, 24);
     if (!name) return json({ error: "请填写名称" }, 400);
+
+    const [settings, existingUser, userCountRow] = await Promise.all([
+      readSettings(db),
+      db.prepare("SELECT id FROM users WHERE id = ?").bind(id).first(),
+      db.prepare("SELECT COUNT(*) AS count FROM users").first(),
+    ]);
+    if (!existingUser && Number(userCountRow?.count || 0) >= Number(settings.maxUsers || DEFAULT_SETTINGS.maxUsers)) {
+      return json({ error: "用户人数已满，请联系管理员" }, 409);
+    }
+
     const now = nowIso();
     await db
       .prepare(
@@ -703,6 +733,7 @@ async function handleApi(context) {
         ...(await stateFor(db, null)),
         adminKey: "ADMIN_KEY 已配置",
         predictionCount: await predictionCount(db),
+        adminUsers: await adminUsers(db),
       });
     }
 
@@ -714,6 +745,7 @@ async function handleApi(context) {
         appTitle: String(body.appTitle || DEFAULT_SETTINGS.appTitle).trim().slice(0, 40),
         autoSyncEnabled: Boolean(body.autoSyncEnabled),
         autoSyncMinutes: Math.max(60, Math.round(Number(body.autoSyncMinutes || 60))),
+        maxUsers: Math.max(1, Math.round(Number(body.maxUsers || DEFAULT_SETTINGS.maxUsers))),
       };
       await db.batch([
         db.prepare("UPDATE settings SET value = ? WHERE key = 'stakeAmount'").bind(String(settings.stakeAmount)),
@@ -721,8 +753,35 @@ async function handleApi(context) {
         db.prepare("UPDATE settings SET value = ? WHERE key = 'appTitle'").bind(settings.appTitle),
         db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncEnabled'").bind(String(settings.autoSyncEnabled)),
         db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncMinutes'").bind(String(settings.autoSyncMinutes)),
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'maxUsers'").bind(String(settings.maxUsers)),
       ]);
       return json({ settings: await readSettings(db) });
+    }
+
+    if (method === "POST" && pathname === "/api/admin/users/update") {
+      const body = await readBody(request);
+      const userId = String(body.userId || "");
+      const name = String(body.name || "").trim().slice(0, 24);
+      if (!userId) return json({ error: "缺少用户 ID" }, 400);
+      if (!name) return json({ error: "请填写用户名称" }, 400);
+      const now = nowIso();
+      const result = await db
+        .prepare("UPDATE users SET name = ?, updated_at = ? WHERE id = ?")
+        .bind(name, now, userId)
+        .run();
+      if (!result.meta?.changes) return json({ error: "用户不存在" }, 404);
+      return json({ ok: true, user: { id: userId, name, updatedAt: now } });
+    }
+
+    if (method === "POST" && pathname === "/api/admin/users/delete") {
+      const body = await readBody(request);
+      const userId = String(body.userId || "");
+      if (!userId) return json({ error: "缺少用户 ID" }, 400);
+      await db.batch([
+        db.prepare("DELETE FROM predictions WHERE user_id = ?").bind(userId),
+        db.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+      ]);
+      return json({ ok: true });
     }
 
     if (method === "POST" && pathname === "/api/admin/sync") return json(await syncFromNetease(db));

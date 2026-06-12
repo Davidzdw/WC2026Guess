@@ -19,7 +19,7 @@
       <section id="adminLogin" class="profile-band">
         <div>
           <p class="section-kicker">管理员口令</p>
-          <h2>Cloudflare 环境变量里的 ADMIN_KEY</h2>
+          <h2>输入 Cloudflare 环境变量里的 ADMIN_KEY</h2>
         </div>
         <form id="adminKeyForm" class="profile-form">
           <input id="adminKeyInput" placeholder="输入 Admin key" autocomplete="off" />
@@ -42,6 +42,10 @@
             <label>
               开赛前锁定分钟数
               <input id="lockInput" type="number" min="1" step="1" />
+            </label>
+            <label>
+              最大用户数
+              <input id="maxUsersInput" type="number" min="1" step="1" />
             </label>
             <label class="checkbox-label">
               <input id="autoSyncInput" type="checkbox" />
@@ -67,6 +71,12 @@
         <div class="admin-section wide">
           <p class="section-kicker">运营概览</p>
           <div id="adminOverview" class="overview-grid"></div>
+        </div>
+
+        <div class="admin-section wide">
+          <p class="section-kicker">用户管理</p>
+          <p class="muted">可以改名、查看预测数量、移除用户。移除用户会删除他的预测，但不会改写已经生成的历史结算记录。</p>
+          <div id="userList" class="user-list"></div>
         </div>
       </section>
     </main>

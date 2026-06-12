@@ -523,6 +523,40 @@ main {
   font-size: 24px;
 }
 
+.user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-limit-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbf7;
+}
+
+.user-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.danger-button {
+  border: 1px solid rgba(179, 38, 30, 0.28);
+  background: white;
+  color: var(--red);
+}
+
 @media (max-width: 760px) {
   main,
   .topbar {
@@ -568,7 +602,8 @@ main {
   .transfer-row,
   .balance-row,
   .match-result-row,
-  .leader-row {
+  .leader-row,
+  .user-row {
     grid-template-columns: 1fr;
     gap: 4px;
   }
