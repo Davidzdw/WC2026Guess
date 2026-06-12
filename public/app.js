@@ -132,9 +132,6 @@ function predictionMetaClass(match) {
 
 function renderPublicPredictions(match) {
   const predictions = match.publicPredictions || [];
-  if (!match.locked && !match.settlement) {
-    return `<div class="public-picks muted">锁定后公开大家的选择</div>`;
-  }
   if (!predictions.length) {
     return `<div class="public-picks muted">暂无人竞猜</div>`;
   }

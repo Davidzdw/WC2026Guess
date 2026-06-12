@@ -186,14 +186,13 @@ function publicMatch(match, settings, prediction, settlement, publicPredictions 
       ? settlement.entries.find((entry) => entry.userId === prediction.userId) || null
       : null;
   const locked = isLocked(match, settings);
-  const revealPredictions = locked || Boolean(settlement);
   return {
     ...match,
     locked,
     allowedPicks: allowedPicks(match),
     myPrediction: prediction || null,
     mySettlementEntry,
-    publicPredictions: revealPredictions ? publicPredictions : [],
+    publicPredictions,
     settlement: settlement
       ? {
           status: settlement.status,
