@@ -174,17 +174,20 @@ function settlementFromRow(row) {
   };
 }
 
-function publicMatch(match, settings, prediction, settlement) {
+function publicMatch(match, settings, prediction, settlement, publicPredictions = []) {
   const mySettlementEntry =
     prediction && settlement?.entries
       ? settlement.entries.find((entry) => entry.userId === prediction.userId) || null
       : null;
+  const locked = isLocked(match, settings);
+  const revealPredictions = locked || Boolean(settlement);
   return {
     ...match,
-    locked: isLocked(match, settings),
+    locked,
     allowedPicks: allowedPicks(match),
     myPrediction: prediction || null,
     mySettlementEntry,
+    publicPredictions: revealPredictions ? publicPredictions : [],
     settlement: settlement
       ? {
           status: settlement.status,
@@ -224,6 +227,30 @@ async function getUserPredictions(db, userId) {
       },
     ])
   );
+}
+
+async function getPublicPredictions(db) {
+  const rows = await db
+    .prepare(
+      `SELECT p.match_id, p.user_id, p.pick, p.pick_label, p.updated_at, u.name
+       FROM predictions p
+       LEFT JOIN users u ON u.id = p.user_id
+       ORDER BY p.updated_at ASC`
+    )
+    .all();
+  const byMatch = {};
+  for (const row of rows.results || []) {
+    const matchId = String(row.match_id);
+    byMatch[matchId] = byMatch[matchId] || [];
+    byMatch[matchId].push({
+      userId: row.user_id,
+      name: row.name || "未知用户",
+      pick: row.pick,
+      pickLabel: row.pick_label,
+      updatedAt: row.updated_at,
+    });
+  }
+  return byMatch;
 }
 
 async function dailySummary(db, date) {
@@ -299,11 +326,12 @@ async function stateFor(db, userId, options = {}) {
   const settings = await readSettings(db);
   if (!options.skipAutoSync) await maybeAutoSync(db, settings);
 
-  const [user, usersRows, matches, predictionsByMatch, settlements] = await Promise.all([
+  const [user, usersRows, matches, predictionsByMatch, publicPredictionsByMatch, settlements] = await Promise.all([
     userId ? db.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first() : null,
     db.prepare("SELECT * FROM users ORDER BY name").all(),
     getAllMatches(db),
     getUserPredictions(db, userId),
+    getPublicPredictions(db),
     getSettlements(db),
   ]);
 
@@ -317,7 +345,13 @@ async function stateFor(db, userId, options = {}) {
     user: toPublicUser(user),
     users: (usersRows.results || []).map(toPublicUser),
     matches: matches.map((match) =>
-      publicMatch(match, settings, predictionsByMatch[match.id], settlementsByMatch[match.id])
+      publicMatch(
+        match,
+        settings,
+        predictionsByMatch[match.id],
+        settlementsByMatch[match.id],
+        publicPredictionsByMatch[match.id] || []
+      )
     ),
     dates,
     selectedDate,

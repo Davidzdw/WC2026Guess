@@ -114,6 +114,55 @@ function predictionMetaClass(match) {
   return "";
 }
 
+function renderPublicPredictions(match) {
+  const predictions = match.publicPredictions || [];
+  if (!match.locked && !match.settlement) {
+    return `<div class="public-picks muted">锁定后公开大家的选择</div>`;
+  }
+  if (!predictions.length) {
+    return `<div class="public-picks muted">暂无人竞猜</div>`;
+  }
+
+  const groups = Object.fromEntries(match.allowedPicks.map((pick) => [pick, []]));
+  for (const prediction of predictions) {
+    groups[prediction.pick] = groups[prediction.pick] || [];
+    groups[prediction.pick].push(prediction);
+  }
+
+  return `
+    <div class="public-picks">
+      <p class="public-picks-title">大家的选择</p>
+      <div class="public-pick-groups">
+        ${match.allowedPicks
+          .map((pick) => {
+            const rows = groups[pick] || [];
+            return `
+              <div class="public-pick-group ${match.settlement?.result === pick ? "public-pick-result" : ""}">
+                <div class="public-pick-heading">
+                  <span>${pickLabel(pick)}</span>
+                  <strong>${rows.length}</strong>
+                </div>
+                <div class="public-pick-names">
+                  ${
+                    rows.length
+                      ? rows
+                          .map(
+                            (row) =>
+                              `<span class="public-pick-name ${
+                                row.userId === state.userId ? "me" : ""
+                              }">${row.name}</span>`
+                          )
+                          .join("")
+                      : `<span class="public-pick-empty">-</span>`
+                  }
+                </div>
+              </div>`;
+          })
+          .join("")}
+      </div>
+    </div>`;
+}
+
 function renderMatchCard(match) {
   const status = statusLabel(match);
   const picks = match.allowedPicks;
@@ -150,6 +199,7 @@ function renderMatchCard(match) {
       <div>
         <div class="${pickRowClass}">${buttons}</div>
         <div class="pick-meta ${predictionMetaClass(match)}">${predictionMeta(match)}</div>
+        ${renderPublicPredictions(match)}
       </div>
     </article>`;
 }
