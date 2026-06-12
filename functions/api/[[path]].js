@@ -347,6 +347,87 @@ async function adminUsers(db) {
   }));
 }
 
+async function adminPredictionUsers(db) {
+  const [users, predictionRows] = await Promise.all([
+    adminUsers(db),
+    db
+      .prepare(
+        `SELECT
+           u.id AS user_id,
+           u.name AS user_name,
+           p.match_id,
+           p.pick,
+           p.pick_label,
+           p.stake_amount,
+           p.updated_at,
+           m.home_team,
+           m.away_team,
+           m.china_date,
+           m.china_time,
+           m.kickoff_ms,
+           m.stage_name,
+           m.group_name,
+           m.match_status,
+           s.status AS settlement_status,
+           s.result_label,
+           s.score_text,
+           s.entries
+         FROM predictions p
+         INNER JOIN users u ON u.id = p.user_id
+         INNER JOIN matches m ON m.id = p.match_id
+         LEFT JOIN settlements s ON s.match_id = p.match_id
+         ORDER BY u.name ASC, m.kickoff_ms DESC, p.updated_at DESC`
+      )
+      .all(),
+  ]);
+
+  const byUserId = Object.fromEntries(
+    users.map((user) => [
+      user.id,
+      {
+        ...user,
+        predictions: [],
+      },
+    ])
+  );
+
+  for (const row of predictionRows.results || []) {
+    const bucket = byUserId[row.user_id];
+    if (!bucket) continue;
+    let settlementAmount = null;
+    if (row.entries) {
+      const entries = JSON.parse(row.entries);
+      const matched = entries.find((entry) => entry.userId === row.user_id);
+      if (matched) settlementAmount = Number(matched.amount || 0);
+    }
+    bucket.predictions.push({
+      matchId: String(row.match_id),
+      homeTeam: row.home_team || "",
+      awayTeam: row.away_team || "",
+      chinaDate: row.china_date,
+      chinaTime: row.china_time,
+      kickoffMs: Number(row.kickoff_ms),
+      stageName: row.stage_name || "",
+      group: row.group_name || "",
+      matchStatus: Number(row.match_status || 1),
+      pick: row.pick,
+      pickLabel: row.pick_label || outcomeLabel(row.pick),
+      stakeAmount: Number(row.stake_amount || 0),
+      updatedAt: row.updated_at,
+      settlement: row.settlement_status
+        ? {
+            status: row.settlement_status,
+            resultLabel: row.result_label || "",
+            scoreText: row.score_text || "",
+            amount: settlementAmount,
+          }
+        : null,
+    });
+  }
+
+  return Object.values(byUserId);
+}
+
 async function stateFor(db, userId, options = {}) {
   const settings = await readSettings(db);
   if (!options.skipAutoSync) await maybeAutoSync(db, settings);
@@ -740,6 +821,7 @@ async function handleApi(context) {
         adminKey: "ADMIN_KEY 已配置",
         predictionCount: await predictionCount(db),
         adminUsers: await adminUsers(db),
+        adminPredictionUsers: await adminPredictionUsers(db),
       });
     }
 

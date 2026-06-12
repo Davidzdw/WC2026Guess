@@ -43,6 +43,19 @@ function formatDateTime(iso) {
   }).format(new Date(iso));
 }
 
+function formatPredictionStatus(prediction) {
+  if (!prediction.settlement) {
+    if (Number(prediction.matchStatus) === 3) return "已结束，待结算";
+    if (Number(prediction.matchStatus) === 2) return "进行中";
+    return "未结算";
+  }
+  if (prediction.settlement.status === "void") return "流局";
+  const amount = Number(prediction.settlement.amount || 0);
+  if (amount > 0) return `猜对 +${amount.toFixed(2)} 元`;
+  if (amount < 0) return `猜错 ${amount.toFixed(2)} 元`;
+  return "已结算";
+}
+
 function renderUsers() {
   const users = admin.data.adminUsers || admin.data.users || [];
   const maxUsers = Number(admin.data.settings.maxUsers || 0);
@@ -69,6 +82,65 @@ function renderUsers() {
   `;
 }
 
+function renderPredictionUsers() {
+  const users = admin.data.adminPredictionUsers || [];
+  $("#predictionUsers").innerHTML = users.length
+    ? users
+        .map((user) => {
+          const rows = user.predictions.length
+            ? user.predictions
+                .map(
+                  (prediction) => `
+                    <div class="prediction-row">
+                      <div>
+                        <div class="prediction-match">${escapeHtml(prediction.homeTeam)} vs ${escapeHtml(
+                          prediction.awayTeam
+                        )}</div>
+                        <div class="prediction-meta">
+                          ${escapeHtml(prediction.chinaDate)} ${escapeHtml(prediction.chinaTime)}
+                          · ${escapeHtml(prediction.stageName)}${prediction.group ? ` · ${escapeHtml(prediction.group)}组` : ""}
+                          · 选择 ${escapeHtml(prediction.pickLabel)}
+                        </div>
+                      </div>
+                      <div class="prediction-outcome">
+                        ${
+                          prediction.settlement
+                            ? `<div>${escapeHtml(prediction.settlement.scoreText || "")} ${escapeHtml(
+                                prediction.settlement.resultLabel || ""
+                              )}</div>`
+                            : ""
+                        }
+                        <strong class="${
+                          Number(prediction.settlement?.amount || 0) > 0
+                            ? "amount-positive"
+                            : Number(prediction.settlement?.amount || 0) < 0
+                              ? "amount-negative"
+                              : ""
+                        }">${escapeHtml(formatPredictionStatus(prediction))}</strong>
+                      </div>
+                    </div>
+                  `
+                )
+                .join("")
+            : `<p class="muted">这个用户还没有提交过竞猜。</p>`;
+
+          return `
+            <section class="prediction-user-card">
+              <div class="prediction-user-header">
+                <div>
+                  <h3>${escapeHtml(user.name)}</h3>
+                  <p class="muted">${Number(user.predictionCount || 0)} 个预测 · 创建 ${formatDateTime(user.createdAt)}</p>
+                </div>
+                <span class="status-pill">${escapeHtml(user.id)}</span>
+              </div>
+              <div class="prediction-user-list">${rows}</div>
+            </section>
+          `;
+        })
+        .join("")
+    : `<p class="muted">还没有任何用户竞猜记录。</p>`;
+}
+
 function renderAdmin() {
   $("#adminLogin").classList.add("hidden");
   $("#adminPanel").classList.remove("hidden");
@@ -93,6 +165,7 @@ function renderAdmin() {
     <div class="overview-tile">预测数<strong>${predictions}</strong></div>
   `;
   renderUsers();
+  renderPredictionUsers();
 }
 
 async function loadAdmin() {

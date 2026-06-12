@@ -78,10 +78,16 @@
           <p class="muted">可以改名、查看预测数量、移除用户。移除用户会删除他的预测，但不会改写已经生成的历史结算记录。</p>
           <div id="userList" class="user-list"></div>
         </div>
+
+        <div class="admin-section wide">
+          <p class="section-kicker">用户竞猜情况</p>
+          <p class="muted">按用户查看每个人当前已经提交的竞猜内容，方便你在后台快速核对。</p>
+          <div id="predictionUsers" class="prediction-users"></div>
+        </div>
       </section>
     </main>
 
     <div id="toast" class="toast" role="status"></div>
-    <script src="/admin.js?v=20260612-user-management"></script>
+    <script src="/admin.js?v=20260612-admin-predictions"></script>
   </body>
 </html>

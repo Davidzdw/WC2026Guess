@@ -557,6 +557,62 @@ main {
   color: var(--red);
 }
 
+.prediction-users,
+.prediction-user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.prediction-user-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbf7;
+}
+
+.prediction-user-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.prediction-user-header h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.prediction-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #eef2ec;
+}
+
+.prediction-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.prediction-match {
+  font-weight: 700;
+}
+
+.prediction-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.prediction-outcome {
+  text-align: right;
+  display: grid;
+  gap: 4px;
+}
+
 @media (max-width: 760px) {
   main,
   .topbar {
@@ -603,8 +659,14 @@ main {
   .balance-row,
   .match-result-row,
   .leader-row,
-  .user-row {
+  .user-row,
+  .prediction-row,
+  .prediction-user-header {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .prediction-outcome {
+    text-align: left;
   }
 }
