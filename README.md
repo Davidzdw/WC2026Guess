@@ -103,6 +103,7 @@ You can also connect the GitHub repo to Cloudflare Pages. Use these build settin
 ## Daily Operations
 
 - The public app opportunistically syncs when a match should be finished or a knockout match is inside the configured lookahead window.
+- For fully unattended syncing, deploy the optional cron Worker below.
 - The admin page can manually sync NetEase and manually settle completed matches.
 - The statistics page nets all settled matches for a China-date and generates a minimal transfer list, for example:
 
@@ -113,10 +114,29 @@ Chen -> Dana: 10.00 元
 
 Use the `复制通知` button to paste the settlement message into WeChat.
 
+## Optional Cron Sync
+
+Cloudflare Pages Functions do not run on a schedule by themselves. The repo includes a tiny Worker that calls the app's protected auto-sync endpoint every 15 minutes. The endpoint still respects the admin sync interval and match-window logic, so it does not call NetEase on every cron tick.
+
+After the Pages URL is live, update `SITE_ORIGIN` in `wrangler.sync.toml` if your Pages URL is not `https://wc2026guess.pages.dev`.
+
+Set the same admin key on the cron Worker:
+
+```powershell
+npx wrangler secret put ADMIN_KEY --config wrangler.sync.toml
+```
+
+Deploy the cron Worker:
+
+```powershell
+npx wrangler deploy --config wrangler.sync.toml
+```
+
 ## Files
 
 - `functions/api/[[path]].js`: Cloudflare Pages Function API, settlement logic, NetEase sync.
 - `migrations/0001_init.sql`: D1 schema and initial China-time schedule seed.
 - `public/index.html`: user-facing app.
 - `public/admin.html`: admin page.
+- `workers/sync.js`: optional cron Worker for unattended sync.
 - `worldcup_2026_schedule_cn.csv`: source schedule CSV used to generate the migration seed.

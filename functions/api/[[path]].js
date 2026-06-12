@@ -703,6 +703,12 @@ async function handleApi(context) {
       return json(await syncFromNetease(db));
     }
 
+    if (method === "POST" && pathname === "/api/admin/auto-sync") {
+      const settings = await readSettings(db);
+      const synced = await maybeAutoSync(db, settings);
+      return json({ ok: true, synced, settings: await readSettings(db) });
+    }
+
     if (method === "POST" && pathname === "/api/admin/settle") {
       const settlements = await settleCompletedMatches(db, false);
       return json({ ok: true, settlements: settlements.length });
