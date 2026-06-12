@@ -5,5 +5,5 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "wc2026guess"
-database_id = "replace-with-your-d1-database-id"
+database_id = "4a437792-f2ca-4877-95c0-0515bd76b5c3"
 migrations_dir = "migrations"

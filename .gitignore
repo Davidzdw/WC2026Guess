@@ -2,6 +2,7 @@ db.json
 node_modules/
 .env
 .dev.vars
+ADMIN_KEY.txt
 .wrangler/
 *.log
 .DS_Store
