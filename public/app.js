@@ -76,10 +76,48 @@ function renderDateOptions() {
   $("#summaryDateSelect").value = state.data.selectedDate;
 }
 
+function pickClass(match, pick) {
+  const classes = ["pick"];
+  if (match.myPrediction?.pick === pick) classes.push("selected");
+  if (match.settlement?.result === pick) classes.push("result-pick");
+  if (match.mySettlementEntry && match.myPrediction?.pick === pick) {
+    if (match.settlement?.status === "void") classes.push("void-pick");
+    else if (Number(match.mySettlementEntry.amount) > 0) classes.push("correct-pick");
+    else if (Number(match.mySettlementEntry.amount) < 0) classes.push("wrong-pick");
+  }
+  return classes.join(" ");
+}
+
+function predictionMeta(match) {
+  if (match.settlement) {
+    if (!match.myPrediction) return "未竞猜";
+    if (match.settlement.status === "void") {
+      return match.mySettlementEntry ? `流局 ${match.myPrediction.pickLabel}` : "流局，未竞猜";
+    }
+    if (!match.mySettlementEntry) return `已选 ${match.myPrediction.pickLabel}`;
+    const amount = Number(match.mySettlementEntry.amount || 0);
+    if (amount > 0) return `猜对 ${formatAmount(amount)}`;
+    if (amount < 0) return `猜错 ${formatAmount(amount)}`;
+    return `流局 ${match.myPrediction.pickLabel}`;
+  }
+  if (match.myPrediction) return `已选 ${match.myPrediction.pickLabel}`;
+  if (match.locked) return "开赛前已锁定";
+  if (state.data.user) return `每场 ${state.data.settings.stakeAmount} 元`;
+  return "先填写名称";
+}
+
+function predictionMetaClass(match) {
+  if (!match.settlement || !match.mySettlementEntry) return "";
+  const amount = Number(match.mySettlementEntry.amount || 0);
+  if (amount > 0) return "amount-positive";
+  if (amount < 0) return "amount-negative";
+  return "";
+}
+
 function renderMatchCard(match) {
   const status = statusLabel(match);
   const picks = match.allowedPicks;
-  const pickClass = picks.length === 2 ? "pick-row two" : "pick-row";
+  const pickRowClass = picks.length === 2 ? "pick-row two" : "pick-row";
   const result = match.settlement
     ? `<span class="status-pill done">结果 ${match.settlement.scoreText || ""} ${
         match.settlement.resultLabel || ""
@@ -90,7 +128,7 @@ function renderMatchCard(match) {
     .map(
       (pick) => `
         <button
-          class="pick ${match.myPrediction?.pick === pick ? "selected" : ""}"
+          class="${pickClass(match, pick)}"
           data-match-id="${match.id}"
           data-pick="${pick}"
           ${disabled}
@@ -98,13 +136,6 @@ function renderMatchCard(match) {
         >${pickLabel(pick)}</button>`
     )
     .join("");
-  const meta = match.myPrediction
-    ? `已选 ${match.myPrediction.pickLabel}`
-    : match.locked
-      ? "开赛前已锁定"
-      : state.data.user
-        ? `每场 ${state.data.settings.stakeAmount} 元`
-        : "先填写名称";
 
   return `
     <article class="match-card">
@@ -117,8 +148,8 @@ function renderMatchCard(match) {
         <p>${match.venue || "赛场待定"} <span class="status-pill ${status.className}">${status.text}</span> ${result}</p>
       </div>
       <div>
-        <div class="${pickClass}">${buttons}</div>
-        <div class="pick-meta">${meta}</div>
+        <div class="${pickRowClass}">${buttons}</div>
+        <div class="pick-meta ${predictionMetaClass(match)}">${predictionMeta(match)}</div>
       </div>
     </article>`;
 }
@@ -147,13 +178,8 @@ function renderMatches() {
 
 function summaryText(summary) {
   const lines = [`${summary.date} 世界杯竞猜结算`];
-  if (!summary.transfers.length) {
-    lines.push("今日无需转账。");
-  } else {
-    for (const transfer of summary.transfers) {
-      lines.push(`${transfer.fromName} -> ${transfer.toName}: ${transfer.amount.toFixed(2)} 元`);
-    }
-  }
+  if (!summary.transfers.length) lines.push("今日无需转账。");
+  else summary.transfers.forEach((transfer) => lines.push(`${transfer.fromName} -> ${transfer.toName}: ${transfer.amount.toFixed(2)} 元`));
   return lines.join("\n");
 }
 

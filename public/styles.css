@@ -281,6 +281,30 @@ main {
   color: var(--green);
 }
 
+.pick.result-pick {
+  border-color: var(--gold);
+  background: #fff2cf;
+  color: #7a5300;
+}
+
+.pick.correct-pick {
+  border-color: var(--green);
+  background: var(--green);
+  color: white;
+}
+
+.pick.wrong-pick {
+  border-color: var(--red);
+  background: #ffe8e5;
+  color: var(--red);
+}
+
+.pick.void-pick {
+  border-color: var(--muted);
+  background: #eef3ef;
+  color: var(--muted);
+}
+
 .pick-meta {
   margin-top: 8px;
   color: var(--muted);

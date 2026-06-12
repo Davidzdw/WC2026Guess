@@ -175,11 +175,16 @@ function settlementFromRow(row) {
 }
 
 function publicMatch(match, settings, prediction, settlement) {
+  const mySettlementEntry =
+    prediction && settlement?.entries
+      ? settlement.entries.find((entry) => entry.userId === prediction.userId) || null
+      : null;
   return {
     ...match,
     locked: isLocked(match, settings),
     allowedPicks: allowedPicks(match),
     myPrediction: prediction || null,
+    mySettlementEntry,
     settlement: settlement
       ? {
           status: settlement.status,
