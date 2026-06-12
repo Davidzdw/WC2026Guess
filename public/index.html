@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>世界杯竞猜</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">2026 World Cup</p>
+        <h1 id="appTitle">世界杯竞猜</h1>
+      </div>
+      <a class="admin-link" href="/admin">管理</a>
+    </header>
+
+    <main>
+      <section id="profilePanel" class="profile-band">
+        <div>
+          <p class="section-kicker">你的名字</p>
+          <h2 id="profileTitle">填写后会记住在这台手机上</h2>
+        </div>
+        <form id="profileForm" class="profile-form">
+          <input id="nameInput" name="name" maxlength="24" placeholder="例如：大卫" autocomplete="nickname" />
+          <button type="submit">保存</button>
+        </form>
+      </section>
+
+      <nav class="tabs" aria-label="页面">
+        <button class="tab active" data-view="matches">竞猜</button>
+        <button class="tab" data-view="stats">统计</button>
+        <button class="tab" data-view="leaderboard">排行榜</button>
+      </nav>
+
+      <section id="matchesView" class="view active">
+        <div class="toolbar">
+          <select id="dateSelect" aria-label="选择日期"></select>
+          <button id="refreshButton" class="ghost-button" type="button">刷新</button>
+        </div>
+        <div id="matchList" class="match-list"></div>
+      </section>
+
+      <section id="statsView" class="view">
+        <div class="toolbar">
+          <select id="summaryDateSelect" aria-label="选择结算日期"></select>
+          <button id="copySummaryButton" class="ghost-button" type="button">复制通知</button>
+        </div>
+        <div id="dailySummary" class="summary-grid"></div>
+      </section>
+
+      <section id="leaderboardView" class="view">
+        <div id="leaderboard" class="leaderboard"></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
