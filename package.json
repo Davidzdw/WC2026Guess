@@ -2,8 +2,14 @@
   "name": "world-cup-wechat-pool",
   "version": "1.0.0",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "dev": "wrangler pages dev public --d1 DB --compatibility-date=2026-06-12",
+    "deploy": "wrangler pages deploy public --project-name wc2026guess",
+    "db:migrate:local": "wrangler d1 migrations apply wc2026guess --local",
+    "db:migrate:remote": "wrangler d1 migrations apply wc2026guess --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }

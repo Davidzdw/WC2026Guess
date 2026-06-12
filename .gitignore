@@ -1,6 +1,8 @@
 db.json
 node_modules/
 .env
+.dev.vars
+.wrangler/
 *.log
 .DS_Store
 Thumbs.db

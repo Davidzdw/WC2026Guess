@@ -57,7 +57,7 @@ function renderAdmin() {
     <div class="overview-tile">用户数<strong>${users}</strong></div>
     <div class="overview-tile">已结算比赛<strong>${settled}</strong></div>
     <div class="overview-tile">已锁定未完赛<strong>${locked}</strong></div>
-    <div class="overview-tile">我的预测数<strong>${predictions}</strong></div>
+    <div class="overview-tile">预测数<strong>${predictions}</strong></div>
   `;
 }
 

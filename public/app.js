@@ -54,9 +54,7 @@ function renderProfile() {
 }
 
 function renderDateOptions() {
-  const options = state.data.dates
-    .map((date) => `<option value="${date}">${date}</option>`)
-    .join("");
+  const options = state.data.dates.map((date) => `<option value="${date}">${date}</option>`).join("");
   $("#dateSelect").innerHTML = options;
   $("#summaryDateSelect").innerHTML = options;
   $("#dateSelect").value = state.data.selectedDate;
@@ -72,7 +70,9 @@ function renderMatches() {
       const picks = match.allowedPicks;
       const pickClass = picks.length === 2 ? "pick-row two" : "pick-row";
       const result = match.settlement
-        ? `<span class="status-pill done">结果 ${match.settlement.scoreText || ""} ${match.settlement.resultLabel || ""}</span>`
+        ? `<span class="status-pill done">结果 ${match.settlement.scoreText || ""} ${
+            match.settlement.resultLabel || ""
+          }</span>`
         : "";
       const disabled = match.locked || !state.data.user ? "disabled" : "";
       const buttons = picks
@@ -102,7 +102,9 @@ function renderMatches() {
           </div>
           <div class="teams">
             <h3>${match.homeTeam || "待定"} vs ${match.awayTeam || "待定"}</h3>
-            <p>${match.venue || "赛场待定"} <span class="status-pill ${status.className}">${status.text}</span> ${result}</p>
+            <p>${match.venue || "赛场待定"} <span class="status-pill ${status.className}">${
+              status.text
+            }</span> ${result}</p>
           </div>
           <div>
             <div class="${pickClass}">${buttons}</div>
@@ -119,7 +121,7 @@ function summaryText(summary) {
     lines.push("今日无需转账。");
   } else {
     for (const transfer of summary.transfers) {
-      lines.push(`${transfer.fromName} -> ${transfer.toName}：${transfer.amount.toFixed(2)} 元`);
+      lines.push(`${transfer.fromName} -> ${transfer.toName}: ${transfer.amount.toFixed(2)} 元`);
     }
   }
   return lines.join("\n");
@@ -144,7 +146,9 @@ function renderSummary(summary = state.data.todaySummary) {
           (row) => `
           <div class="balance-row">
             <span>${row.name}</span>
-            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(row.amount)}</strong>
+            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(
+              row.amount
+            )}</strong>
           </div>`
         )
         .join("")
@@ -190,7 +194,9 @@ function renderLeaderboard() {
           (row, index) => `
           <div class="leader-row">
             <span>${index + 1}. ${row.name}</span>
-            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(row.amount)}</strong>
+            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(
+              row.amount
+            )}</strong>
           </div>`
         )
         .join("")
@@ -267,7 +273,7 @@ $("#refreshButton").addEventListener("click", () => loadState().then(() => toast
 $("#copySummaryButton").addEventListener("click", async () => {
   const text = $("#copySummaryButton").dataset.copyText || "";
   await navigator.clipboard.writeText(text);
-  toast("已复制，可粘贴到微信群");
+  toast("已复制，可以粘贴到微信群");
 });
 
 loadState().catch((error) => toast(error.message));

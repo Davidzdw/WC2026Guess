@@ -1,0 +1,9 @@
+name = "wc2026guess"
+compatibility_date = "2026-06-12"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wc2026guess"
+database_id = "replace-with-your-d1-database-id"
+migrations_dir = "migrations"
