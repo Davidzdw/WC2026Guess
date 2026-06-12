@@ -74,8 +74,10 @@ Cron Worker:
 
 - Name: `wc2026guess-sync`
 - URL: `https://wc2026guess-sync.zhangdw.workers.dev`
-- Schedule: every 15 minutes, `*/15 * * * *`
-- Purpose: calls `https://wc2026guess.pages.dev/api/admin/auto-sync`
+- Schedule: every hour, `0 * * * *`
+- Purpose: calls the configured `SITE_ORIGIN` admin auto-sync endpoint.
+- The app only calls NetEase from auto-sync when at least one unsettled match should already be finished.
+- `SITE_ORIGIN` currently uses the stable `pages.dev` URL. Switch it to a custom domain only after the custom domain resolves to Cloudflare Pages.
 
 Secrets:
 
@@ -198,6 +200,7 @@ What was done successfully:
 - Set `ADMIN_KEY` on the cron Worker.
 - Deployed cron Worker `wc2026guess-sync`.
 - Verified production `/api/admin/state` returns HTTP 200 when using the admin key.
+- Later changed auto-sync to post-match only: no real-time score polling and no knockout pre-match polling.
 
 Bug fixed during local verification:
 
@@ -213,7 +216,7 @@ Relevant Cloudflare free-plan limits checked on 2026-06-12:
 - Workers/Pages Functions: 100,000 requests/day.
 - Static asset requests: free and unlimited.
 - D1: 5 million rows read/day, 100,000 rows written/day, 5 GB storage total.
-- Cron Worker every 15 minutes is only 96 invocations/day.
+- Cron Worker every hour is only 24 invocations/day.
 
 If the Cloudflare account is upgraded to Workers Paid, it has a minimum monthly charge and overage billing. On the free plan, exceeding D1 daily limits should generally cause errors rather than automatic overage billing.
 
@@ -221,7 +224,8 @@ If the Cloudflare account is upgraded to Workers Paid, it has a minimum monthly 
 
 - The app uses NetEase's public World Cup page API for private, lightweight schedule/result sync.
 - The app should avoid aggressive polling.
-- Current logic syncs opportunistically and via cron only every 15 minutes, with additional app-side checks to avoid calling NetEase unnecessarily.
+- Current logic syncs conservatively: the cron Worker checks hourly, and the app only calls NetEase after a match should have finished and still needs settlement.
+- Estimated NetEase API calls for the whole tournament after this change are roughly 90-110, instead of several hundred.
 - The app is for a private group and does not process real payments.
 - Settlement output is informational; users manually transfer money in WeChat if they choose.
 

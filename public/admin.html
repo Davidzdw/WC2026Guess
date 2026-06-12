@@ -45,15 +45,11 @@
             </label>
             <label class="checkbox-label">
               <input id="autoSyncInput" type="checkbox" />
-              自动同步赛程和赛果
+              赛后自动同步赛果
             </label>
             <label>
-              自动同步间隔（分钟）
-              <input id="autoSyncMinutesInput" type="number" min="5" step="1" />
-            </label>
-            <label>
-              淘汰赛赛前更新窗口（小时）
-              <input id="lookaheadInput" type="number" min="1" step="1" />
+              自动同步间隔（分钟，最低 60）
+              <input id="autoSyncMinutesInput" type="number" min="60" step="1" />
             </label>
             <button type="submit">保存设置</button>
           </form>
@@ -61,7 +57,7 @@
           <div class="admin-section">
             <p class="section-kicker">赛程和结算</p>
             <div class="button-row">
-              <button id="syncButton" type="button">同步网易接口</button>
+              <button id="syncButton" type="button">手动同步网易接口</button>
               <button id="settleButton" class="ghost-button" type="button">结算已完赛</button>
             </div>
             <p id="syncStatus" class="muted"></p>

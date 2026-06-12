@@ -45,8 +45,7 @@ function renderAdmin() {
   $("#stakeInput").value = admin.data.settings.stakeAmount;
   $("#lockInput").value = admin.data.settings.lockMinutes;
   $("#autoSyncInput").checked = Boolean(admin.data.settings.autoSyncEnabled);
-  $("#autoSyncMinutesInput").value = admin.data.settings.autoSyncMinutes;
-  $("#lookaheadInput").value = admin.data.settings.knockoutLookaheadHours;
+  $("#autoSyncMinutesInput").value = Math.max(60, Number(admin.data.settings.autoSyncMinutes || 60));
   $("#syncStatus").textContent = `上次同步：${formatDateTime(admin.data.settings.lastSyncAt)}`;
 
   const settled = admin.data.matches.filter((match) => match.settlement).length;
@@ -92,7 +91,6 @@ $("#settingsForm").addEventListener("submit", async (event) => {
         lockMinutes: $("#lockInput").value,
         autoSyncEnabled: $("#autoSyncInput").checked,
         autoSyncMinutes: $("#autoSyncMinutesInput").value,
-        knockoutLookaheadHours: $("#lookaheadInput").value,
       }),
     });
     await loadAdmin();
@@ -105,7 +103,7 @@ $("#settingsForm").addEventListener("submit", async (event) => {
 $("#syncButton").addEventListener("click", async () => {
   try {
     $("#syncButton").disabled = true;
-    $("#syncStatus").textContent = "正在同步网易赛程和比分...";
+    $("#syncStatus").textContent = "正在同步网易赛程和赛果...";
     const result = await api("/api/admin/sync", { method: "POST", body: "{}" });
     await loadAdmin();
     toast(`已同步 ${result.updated} 场`);

@@ -6,4 +6,4 @@ compatibility_date = "2026-06-12"
 SITE_ORIGIN = "https://wc2026guess.pages.dev"
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 * * * *"]

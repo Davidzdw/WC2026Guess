@@ -2,6 +2,7 @@ const NETEASE_API =
   "https://sports.163.com/caipiao/api/web/relottery/activity/matchInfo/worldCup2026/matchListGroup";
 
 const GROUP_STAGE_ID = 232934;
+const MATCH_SETTLE_DELAY_MS = 2 * 60 * 60 * 1000;
 
 const STAGE_NAMES = {
   232934: "小组赛",
@@ -19,8 +20,7 @@ const DEFAULT_SETTINGS = {
   appTitle: "2026 世界杯微信群竞猜",
   lastSyncAt: null,
   autoSyncEnabled: true,
-  autoSyncMinutes: 30,
-  knockoutLookaheadHours: 12,
+  autoSyncMinutes: 60,
 };
 
 function nowIso() {
@@ -66,12 +66,19 @@ function chinaTimeFromMs(ms) {
 
 function parseSetting(key, value) {
   if (value == null) return DEFAULT_SETTINGS[key];
-  if (["stakeAmount", "lockMinutes", "autoSyncMinutes", "knockoutLookaheadHours"].includes(key)) {
-    return Number(value);
-  }
+  if (["stakeAmount", "lockMinutes", "autoSyncMinutes"].includes(key)) return Number(value);
   if (key === "autoSyncEnabled") return value === "true";
   if (key === "lastSyncAt") return value || null;
   return value;
+}
+
+async function ensureSettings(db) {
+  const statements = Object.entries(DEFAULT_SETTINGS).map(([key, value]) =>
+    db
+      .prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
+      .bind(key, value == null ? "" : String(value))
+  );
+  await db.batch(statements);
 }
 
 async function readSettings(db) {
@@ -82,15 +89,6 @@ async function readSettings(db) {
     if (row.key in settings) settings[row.key] = parseSetting(row.key, row.value);
   }
   return settings;
-}
-
-async function ensureSettings(db) {
-  const statements = Object.entries(DEFAULT_SETTINGS).map(([key, value]) =>
-    db
-      .prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
-      .bind(key, value == null ? "" : String(value))
-  );
-  await db.batch(statements);
 }
 
 async function writeSetting(db, key, value) {
@@ -348,6 +346,7 @@ async function settleMatch(db, match, force = false) {
     stakeAmount: Number(row.stake_amount),
     name: row.name || "未知用户",
   }));
+
   const settledAt = nowIso();
   const base = {
     matchId: match.id,
@@ -355,7 +354,7 @@ async function settleMatch(db, match, force = false) {
     chinaDate: match.chinaDate,
     result,
     resultLabel: outcomeLabel(result),
-    stakeAmount: 0,
+    stakeAmount: predictions.length ? Math.max(...predictions.map((item) => Number(item.stakeAmount || 0))) : 0,
     scoreText: scoreText(match),
   };
 
@@ -411,7 +410,6 @@ async function settleMatch(db, match, force = false) {
       });
       settlement = {
         ...base,
-        stakeAmount: predictions.length ? Math.max(...predictions.map((item) => Number(item.stakeAmount || 0))) : 0,
         status: "settled",
         entries: [...loserEntries.map(({ cents, ...entry }) => entry), ...winnerEntries],
       };
@@ -551,7 +549,7 @@ async function maybeAutoSync(db, settings) {
   if (!settings.autoSyncEnabled) return false;
   const now = Date.now();
   const lastSyncMs = settings.lastSyncAt ? Date.parse(settings.lastSyncAt) : 0;
-  const intervalMs = Math.max(5, Number(settings.autoSyncMinutes || 30)) * 60 * 1000;
+  const intervalMs = Math.max(60, Number(settings.autoSyncMinutes || 60)) * 60 * 1000;
   if (lastSyncMs && now - lastSyncMs < intervalMs) return false;
 
   const rows = await db
@@ -559,19 +557,13 @@ async function maybeAutoSync(db, settings) {
       `SELECT m.*
        FROM matches m
        LEFT JOIN settlements s ON s.match_id = m.id
-       WHERE s.match_id IS NULL OR m.stage_id != ? OR m.match_status = 2`
+       WHERE s.match_id IS NULL`
     )
-    .bind(GROUP_STAGE_ID)
     .all();
   const matches = (rows.results || []).map(parseMatch);
-  const knockoutLookaheadMs = Math.max(1, Number(settings.knockoutLookaheadHours || 12)) * 60 * 60 * 1000;
-
   const shouldSync = matches.some((match) => {
     const kickoff = Number(match.kickoffMs);
-    if (!Number.isFinite(kickoff)) return false;
-    if (Number(match.matchStatus) === 2 || Number(match.footballLiveScore?.matchStatus) === 2) return true;
-    if (match.stageId === GROUP_STAGE_ID) return kickoff + 2 * 60 * 60 * 1000 <= now;
-    return kickoff - knockoutLookaheadMs <= now && kickoff + 3 * 60 * 60 * 1000 >= now;
+    return Number.isFinite(kickoff) && kickoff + MATCH_SETTLE_DELAY_MS <= now;
   });
 
   if (!shouldSync) return false;
@@ -605,8 +597,7 @@ async function handleApi(context) {
   const method = request.method.toUpperCase();
 
   if (method === "GET" && pathname === "/api/state") {
-    const state = await stateFor(db, url.searchParams.get("userId"));
-    return json(state);
+    return json(await stateFor(db, url.searchParams.get("userId")));
   }
 
   if (method === "POST" && pathname === "/api/users") {
@@ -683,8 +674,7 @@ async function handleApi(context) {
         lockMinutes: Math.max(1, Math.round(Number(body.lockMinutes || 60))),
         appTitle: String(body.appTitle || DEFAULT_SETTINGS.appTitle).trim().slice(0, 40),
         autoSyncEnabled: Boolean(body.autoSyncEnabled),
-        autoSyncMinutes: Math.max(5, Math.round(Number(body.autoSyncMinutes || 30))),
-        knockoutLookaheadHours: Math.max(1, Math.round(Number(body.knockoutLookaheadHours || 12))),
+        autoSyncMinutes: Math.max(60, Math.round(Number(body.autoSyncMinutes || 60))),
       };
       await db.batch([
         db.prepare("UPDATE settings SET value = ? WHERE key = 'stakeAmount'").bind(String(settings.stakeAmount)),
@@ -692,16 +682,11 @@ async function handleApi(context) {
         db.prepare("UPDATE settings SET value = ? WHERE key = 'appTitle'").bind(settings.appTitle),
         db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncEnabled'").bind(String(settings.autoSyncEnabled)),
         db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncMinutes'").bind(String(settings.autoSyncMinutes)),
-        db
-          .prepare("UPDATE settings SET value = ? WHERE key = 'knockoutLookaheadHours'")
-          .bind(String(settings.knockoutLookaheadHours)),
       ]);
       return json({ settings: await readSettings(db) });
     }
 
-    if (method === "POST" && pathname === "/api/admin/sync") {
-      return json(await syncFromNetease(db));
-    }
+    if (method === "POST" && pathname === "/api/admin/sync") return json(await syncFromNetease(db));
 
     if (method === "POST" && pathname === "/api/admin/auto-sync") {
       const settings = await readSettings(db);
