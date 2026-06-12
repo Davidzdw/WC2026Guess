@@ -1,3 +1,5 @@
+const MATCH_VISIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const state = {
   data: null,
   userId: localStorage.getItem("wc_user_id") || crypto.randomUUID(),
@@ -49,8 +51,21 @@ function formatDateHeading(date) {
   return `${date} ${weekday}`;
 }
 
+function upcomingWindowEndMs() {
+  return Date.now() + MATCH_VISIBILITY_WINDOW_MS;
+}
+
+function visibleMatches() {
+  return (state.data?.matches || []).filter((match) => Number(match.kickoffMs) <= upcomingWindowEndMs());
+}
+
+function visibleDates() {
+  return [...new Set(visibleMatches().map((match) => match.chinaDate))].sort();
+}
+
 function todayAnchorDate() {
-  return state.data.selectedDate || state.data.dates[0];
+  const dates = visibleDates();
+  return state.data.selectedDate && dates.includes(state.data.selectedDate) ? state.data.selectedDate : dates[0];
 }
 
 function dateId(date) {
@@ -67,13 +82,14 @@ function renderProfile() {
   const user = state.data.user;
   $("#appTitle").textContent = state.data.settings.appTitle;
   $("#nameInput").value = user?.name || "";
-  $("#profileTitle").textContent = user ? `你好，${user.name}` : "填写后会记住在这台手机上";
+  $("#profileTitle").textContent = user ? `你好，${user.name}` : "填写后会记住在这台设备上";
 }
 
 function renderDateOptions() {
-  const options = state.data.dates.map((date) => `<option value="${date}">${date}</option>`).join("");
+  const dates = visibleDates();
+  const options = dates.map((date) => `<option value="${date}">${date}</option>`).join("");
   $("#summaryDateSelect").innerHTML = options;
-  $("#summaryDateSelect").value = state.data.selectedDate;
+  $("#summaryDateSelect").value = dates.includes(state.data.selectedDate) ? state.data.selectedDate : dates[0] || "";
 }
 
 function pickClass(match, pick) {
@@ -205,9 +221,20 @@ function renderMatchCard(match) {
 }
 
 function renderMatches() {
-  $("#matchList").innerHTML = state.data.dates
+  const dates = visibleDates();
+  const matches = visibleMatches();
+  if (!matches.length) {
+    $("#matchList").innerHTML = `
+      <section class="summary-block">
+        <h3>暂无可展示比赛</h3>
+        <p class="muted">这里只显示已经发生的比赛，以及未来 24 小时内会开赛的比赛。</p>
+      </section>`;
+    return;
+  }
+
+  $("#matchList").innerHTML = dates
     .map((date) => {
-      const matches = state.data.matches.filter((match) => match.chinaDate === date);
+      const matchesForDate = matches.filter((match) => match.chinaDate === date);
       const isToday = date === todayAnchorDate();
       return `
         <section id="${dateId(date)}" class="match-date-section ${isToday ? "today-section" : ""}">
@@ -216,10 +243,10 @@ function renderMatches() {
               <p class="section-kicker">${isToday ? "今天" : "比赛日"}</p>
               <h2>${formatDateHeading(date)}</h2>
             </div>
-            <span>${matches.length} 场</span>
+            <span>${matchesForDate.length} 场</span>
           </div>
           <div class="date-match-list">
-            ${matches.map(renderMatchCard).join("")}
+            ${matchesForDate.map(renderMatchCard).join("")}
           </div>
         </section>`;
     })
@@ -264,7 +291,7 @@ function renderSummary(summary = state.data.todaySummary) {
           const match = state.data.matches.find((item) => item.id === settlement.matchId);
           const status =
             settlement.status === "void"
-              ? `流局：${settlement.voidReason}`
+              ? `流局，${settlement.voidReason}`
               : `${settlement.scoreText || ""} ${settlement.resultLabel}`;
           return `
             <div class="match-result-row">
@@ -312,8 +339,9 @@ function render() {
   renderSummary();
   renderLeaderboard();
   if (state.shouldAnchorToday) {
+    const anchorDate = todayAnchorDate();
     state.shouldAnchorToday = false;
-    window.requestAnimationFrame(() => scrollToDate(todayAnchorDate(), "auto"));
+    if (anchorDate) window.requestAnimationFrame(() => scrollToDate(anchorDate, "auto"));
   }
 }
 
@@ -369,11 +397,14 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".tab").forEach((node) => node.classList.toggle("active", node === tab));
     document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
     $(`#${state.activeView}View`).classList.add("active");
-    if (state.activeView === "matches") scrollToDate(todayAnchorDate());
+    if (state.activeView === "matches" && todayAnchorDate()) scrollToDate(todayAnchorDate());
   });
 });
 
-$("#todayButton").addEventListener("click", () => scrollToDate(todayAnchorDate()));
+$("#todayButton").addEventListener("click", () => {
+  const anchorDate = todayAnchorDate();
+  if (anchorDate) scrollToDate(anchorDate);
+});
 $("#summaryDateSelect").addEventListener("change", (event) => refreshSummary(event.target.value));
 $("#refreshButton").addEventListener("click", () => {
   state.shouldAnchorToday = false;

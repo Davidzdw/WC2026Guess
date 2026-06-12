@@ -3,6 +3,7 @@ const NETEASE_API =
 
 const GROUP_STAGE_ID = 232934;
 const MATCH_SETTLE_DELAY_MS = 2 * 60 * 60 * 1000;
+const MATCH_VISIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const STAGE_NAMES = {
   232934: "小组赛",
@@ -157,6 +158,10 @@ function matchOutcome(match) {
 
 function isLocked(match, settings) {
   return Date.now() >= match.kickoffMs - settings.lockMinutes * 60 * 1000;
+}
+
+function isVisibleForPrediction(match) {
+  return Number(match.kickoffMs) <= Date.now() + MATCH_VISIBILITY_WINDOW_MS;
 }
 
 function settlementFromRow(row) {
@@ -700,6 +705,7 @@ async function handleApi(context) {
     if (!matchRow) return json({ error: "比赛不存在" }, 404);
 
     const match = parseMatch(matchRow);
+    if (!isVisibleForPrediction(match)) return json({ error: "只能竞猜未来 24 小时内的比赛" }, 409);
     if (isLocked(match, settings)) return json({ error: "这场比赛已经锁定，无法修改" }, 409);
     if (!allowedPicks(match).includes(pick)) return json({ error: "这个阶段不支持该选项" }, 400);
 
