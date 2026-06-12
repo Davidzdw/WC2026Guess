@@ -2,6 +2,7 @@ const state = {
   data: null,
   userId: localStorage.getItem("wc_user_id") || crypto.randomUUID(),
   activeView: "matches",
+  shouldAnchorToday: true,
 };
 
 localStorage.setItem("wc_user_id", state.userId);
@@ -42,8 +43,24 @@ function formatAmount(amount) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)} 元`;
 }
 
-function selectedDate() {
-  return $("#dateSelect").value || state.data.selectedDate;
+function formatDateHeading(date) {
+  const parsed = new Date(`${date}T00:00:00+08:00`);
+  const weekday = new Intl.DateTimeFormat("zh-CN", { weekday: "long", timeZone: "Asia/Shanghai" }).format(parsed);
+  return `${date} ${weekday}`;
+}
+
+function todayAnchorDate() {
+  return state.data.selectedDate || state.data.dates[0];
+}
+
+function dateId(date) {
+  return `match-date-${date}`;
+}
+
+function scrollToDate(date, behavior = "smooth") {
+  const target = document.getElementById(dateId(date));
+  if (!target) return;
+  target.scrollIntoView({ behavior, block: "start" });
 }
 
 function renderProfile() {
@@ -55,62 +72,75 @@ function renderProfile() {
 
 function renderDateOptions() {
   const options = state.data.dates.map((date) => `<option value="${date}">${date}</option>`).join("");
-  $("#dateSelect").innerHTML = options;
   $("#summaryDateSelect").innerHTML = options;
-  $("#dateSelect").value = state.data.selectedDate;
   $("#summaryDateSelect").value = state.data.selectedDate;
 }
 
+function renderMatchCard(match) {
+  const status = statusLabel(match);
+  const picks = match.allowedPicks;
+  const pickClass = picks.length === 2 ? "pick-row two" : "pick-row";
+  const result = match.settlement
+    ? `<span class="status-pill done">结果 ${match.settlement.scoreText || ""} ${
+        match.settlement.resultLabel || ""
+      }</span>`
+    : "";
+  const disabled = match.locked || !state.data.user ? "disabled" : "";
+  const buttons = picks
+    .map(
+      (pick) => `
+        <button
+          class="pick ${match.myPrediction?.pick === pick ? "selected" : ""}"
+          data-match-id="${match.id}"
+          data-pick="${pick}"
+          ${disabled}
+          type="button"
+        >${pickLabel(pick)}</button>`
+    )
+    .join("");
+  const meta = match.myPrediction
+    ? `已选 ${match.myPrediction.pickLabel}`
+    : match.locked
+      ? "开赛前已锁定"
+      : state.data.user
+        ? `每场 ${state.data.settings.stakeAmount} 元`
+        : "先填写名称";
+
+  return `
+    <article class="match-card">
+      <div class="match-time">
+        <strong>${match.chinaTime}</strong>
+        <span>${match.stageName}${match.group ? ` · ${match.group}组` : ""}</span>
+      </div>
+      <div class="teams">
+        <h3>${match.homeTeam || "待定"} vs ${match.awayTeam || "待定"}</h3>
+        <p>${match.venue || "赛场待定"} <span class="status-pill ${status.className}">${status.text}</span> ${result}</p>
+      </div>
+      <div>
+        <div class="${pickClass}">${buttons}</div>
+        <div class="pick-meta">${meta}</div>
+      </div>
+    </article>`;
+}
+
 function renderMatches() {
-  const date = selectedDate();
-  const matches = state.data.matches.filter((match) => match.chinaDate === date);
-  $("#matchList").innerHTML = matches
-    .map((match) => {
-      const status = statusLabel(match);
-      const picks = match.allowedPicks;
-      const pickClass = picks.length === 2 ? "pick-row two" : "pick-row";
-      const result = match.settlement
-        ? `<span class="status-pill done">结果 ${match.settlement.scoreText || ""} ${
-            match.settlement.resultLabel || ""
-          }</span>`
-        : "";
-      const disabled = match.locked || !state.data.user ? "disabled" : "";
-      const buttons = picks
-        .map(
-          (pick) => `
-            <button
-              class="pick ${match.myPrediction?.pick === pick ? "selected" : ""}"
-              data-match-id="${match.id}"
-              data-pick="${pick}"
-              ${disabled}
-              type="button"
-            >${pickLabel(pick)}</button>`
-        )
-        .join("");
-      const meta = match.myPrediction
-        ? `已选 ${match.myPrediction.pickLabel}`
-        : match.locked
-          ? "开赛前已锁定"
-          : state.data.user
-            ? `每场 ${state.data.settings.stakeAmount} 元`
-            : "先填写名称";
+  $("#matchList").innerHTML = state.data.dates
+    .map((date) => {
+      const matches = state.data.matches.filter((match) => match.chinaDate === date);
+      const isToday = date === todayAnchorDate();
       return `
-        <article class="match-card">
-          <div class="match-time">
-            <strong>${match.chinaTime}</strong>
-            <span>${match.stageName}${match.group ? ` · ${match.group}组` : ""}</span>
+        <section id="${dateId(date)}" class="match-date-section ${isToday ? "today-section" : ""}">
+          <div class="date-heading">
+            <div>
+              <p class="section-kicker">${isToday ? "今天" : "比赛日"}</p>
+              <h2>${formatDateHeading(date)}</h2>
+            </div>
+            <span>${matches.length} 场</span>
           </div>
-          <div class="teams">
-            <h3>${match.homeTeam || "待定"} vs ${match.awayTeam || "待定"}</h3>
-            <p>${match.venue || "赛场待定"} <span class="status-pill ${status.className}">${
-              status.text
-            }</span> ${result}</p>
+          <div class="date-match-list">
+            ${matches.map(renderMatchCard).join("")}
           </div>
-          <div>
-            <div class="${pickClass}">${buttons}</div>
-            <div class="pick-meta">${meta}</div>
-          </div>
-        </article>`;
+        </section>`;
     })
     .join("");
 }
@@ -146,9 +176,7 @@ function renderSummary(summary = state.data.todaySummary) {
           (row) => `
           <div class="balance-row">
             <span>${row.name}</span>
-            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(
-              row.amount
-            )}</strong>
+            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(row.amount)}</strong>
           </div>`
         )
         .join("")
@@ -194,9 +222,7 @@ function renderLeaderboard() {
           (row, index) => `
           <div class="leader-row">
             <span>${index + 1}. ${row.name}</span>
-            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(
-              row.amount
-            )}</strong>
+            <strong class="${row.amount >= 0 ? "amount-positive" : "amount-negative"}">${formatAmount(row.amount)}</strong>
           </div>`
         )
         .join("")
@@ -209,6 +235,10 @@ function render() {
   renderMatches();
   renderSummary();
   renderLeaderboard();
+  if (state.shouldAnchorToday) {
+    state.shouldAnchorToday = false;
+    window.requestAnimationFrame(() => scrollToDate(todayAnchorDate(), "auto"));
+  }
 }
 
 async function loadState() {
@@ -229,6 +259,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
       body: JSON.stringify({ userId: state.userId, name: $("#nameInput").value }),
     });
     state.data = payload.state;
+    state.shouldAnchorToday = false;
     render();
     toast("名称已保存");
   } catch (error) {
@@ -240,7 +271,6 @@ $("#matchList").addEventListener("click", async (event) => {
   const button = event.target.closest(".pick");
   if (!button) return;
   try {
-    const currentDate = selectedDate();
     await api("/api/predictions", {
       method: "POST",
       body: JSON.stringify({
@@ -249,9 +279,8 @@ $("#matchList").addEventListener("click", async (event) => {
         pick: button.dataset.pick,
       }),
     });
+    state.shouldAnchorToday = false;
     await loadState();
-    $("#dateSelect").value = currentDate;
-    renderMatches();
     toast("已保存选择");
   } catch (error) {
     toast(error.message);
@@ -264,12 +293,16 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".tab").forEach((node) => node.classList.toggle("active", node === tab));
     document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
     $(`#${state.activeView}View`).classList.add("active");
+    if (state.activeView === "matches") scrollToDate(todayAnchorDate());
   });
 });
 
-$("#dateSelect").addEventListener("change", renderMatches);
+$("#todayButton").addEventListener("click", () => scrollToDate(todayAnchorDate()));
 $("#summaryDateSelect").addEventListener("change", (event) => refreshSummary(event.target.value));
-$("#refreshButton").addEventListener("click", () => loadState().then(() => toast("已刷新")));
+$("#refreshButton").addEventListener("click", () => {
+  state.shouldAnchorToday = false;
+  loadState().then(() => toast("已刷新"));
+});
 $("#copySummaryButton").addEventListener("click", async () => {
   const text = $("#copySummaryButton").dataset.copyText || "";
   await navigator.clipboard.writeText(text);

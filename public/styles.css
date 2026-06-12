@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 86px;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -172,9 +177,47 @@ main {
   border: 1px solid var(--line);
 }
 
-.match-list {
+.match-list,
+.date-match-list {
   display: grid;
   gap: 12px;
+}
+
+.match-date-section {
+  scroll-margin-top: 88px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.date-heading {
+  position: sticky;
+  top: 66px;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(251, 252, 247, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.date-heading h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.date-heading > span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.today-section .date-heading {
+  border-color: rgba(17, 107, 79, 0.38);
+  box-shadow: 0 8px 22px rgba(17, 107, 79, 0.09);
 }
 
 .match-card {
@@ -414,6 +457,7 @@ main {
 
   .toolbar {
     align-items: stretch;
+    flex-wrap: wrap;
   }
 
   .toolbar select {

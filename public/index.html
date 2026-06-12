@@ -34,8 +34,9 @@
       </nav>
 
       <section id="matchesView" class="view active">
-        <div class="toolbar">
-          <select id="dateSelect" aria-label="选择日期"></select>
+        <div class="toolbar match-toolbar">
+          <p class="muted">全部赛程按中国时间展示，打开页面会自动定位到今天。</p>
+          <button id="todayButton" class="ghost-button" type="button">回到今天</button>
           <button id="refreshButton" class="ghost-button" type="button">刷新</button>
         </div>
         <div id="matchList" class="match-list"></div>
