@@ -3,7 +3,7 @@ main = "workers/sync.js"
 compatibility_date = "2026-06-12"
 
 [vars]
-SITE_ORIGIN = "https://wc2026guess.pages.dev"
+SITE_ORIGIN = "https://wc2026guess.xyz"
 
 [triggers]
 crons = ["0 * * * *"]

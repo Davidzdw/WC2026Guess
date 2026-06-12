@@ -77,7 +77,7 @@ Cron Worker:
 - Schedule: every hour, `0 * * * *`
 - Purpose: calls the configured `SITE_ORIGIN` admin auto-sync endpoint.
 - The app only calls NetEase from auto-sync when at least one unsettled match should already be finished.
-- `SITE_ORIGIN` currently uses the stable `pages.dev` URL. Switch it to a custom domain only after the custom domain resolves to Cloudflare Pages.
+- `SITE_ORIGIN` currently uses `https://wc2026guess.xyz`.
 
 Secrets:
 
