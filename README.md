@@ -2,6 +2,8 @@
 
 A simple Cloudflare-hosted World Cup prediction pool for a private WeChat group.
 
+The app now supports multiple independent rooms (`pool`s), so different WeChat groups can play in parallel.
+
 ## Stack
 
 - Cloudflare Pages for static HTML/CSS/JS.
@@ -12,6 +14,7 @@ A simple Cloudflare-hosted World Cup prediction pool for a private WeChat group.
 ## Rules
 
 - Users enter a display name once. The browser stores a local user id, so they do not need to log in again on the same phone.
+- User identity is now stored per room, so the same device can join multiple rooms independently.
 - Predictions lock before kickoff. The default lock window is 60 minutes.
 - Group-stage matches allow `主胜 / 平 / 客胜`.
 - Knockout matches allow only `主胜 / 客胜`.
@@ -19,6 +22,12 @@ A simple Cloudflare-hosted World Cup prediction pool for a private WeChat group.
 - After a match is settled, incorrect predictions lose their stake. The losing pool is split evenly among correct predictions.
 - If everyone who predicted is wrong, the match is void.
 - The app only records predictions and settlement suggestions. It does not process payments.
+
+## Rooms
+
+- Default room: `https://wc2026guess.xyz/`
+- Additional rooms: `https://wc2026guess.xyz/?pool=room-slug`
+- Rooms share the same World Cup schedule, but users, predictions, settlement, and stake settings are isolated per room.
 
 ## Cloudflare Setup
 

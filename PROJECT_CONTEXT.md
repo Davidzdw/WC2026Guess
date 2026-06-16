@@ -6,6 +6,8 @@ This file is a handoff note for continuing development on another device.
 
 `WC2026Guess` is a lightweight World Cup prediction app for a private WeChat group.
 
+The app now supports multiple independent prediction rooms (`pool`s), so different WeChat groups can play in parallel without mixing users, predictions, settlements, or stake amounts.
+
 Users:
 - open a link
 - enter a name once
@@ -31,9 +33,30 @@ Admin:
 
 The repo is configured for Cloudflare Pages + Pages Functions + D1.
 
+## Multi-Pool Model
+
+- Each prediction activity is a `pool`.
+- The original existing data was preserved and migrated into the default pool:
+  - pool id: `pool_default`
+  - pool slug: `main`
+- Match schedule is shared globally across all pools.
+- These are isolated per pool:
+  - users
+  - predictions
+  - settlements
+  - leaderboard
+  - daily transfer summary
+  - stake amount
+  - lock minutes
+  - max users
+- New pool entry URLs use the query string:
+  - default room: `https://wc2026guess.xyz/`
+  - other rooms: `https://wc2026guess.xyz/?pool=room-slug`
+
 ## Current Product Rules
 
 - Users are identified by a browser-local `userId` stored in `localStorage`.
+- The `localStorage` key is now namespaced by pool slug, so the same device can participate in different rooms without account collision.
 - This means the same person opening in WeChat browser and Safari will be treated as two users.
 - Group stage supports `主胜 / 平 / 客胜`.
 - Knockout stage supports `主胜 / 客胜`.
@@ -76,7 +99,11 @@ The repo is configured for Cloudflare Pages + Pages Functions + D1.
 
 The admin page currently includes:
 
+- room selector
+- room link copy
+- create new room
 - app title
+- current room name
 - stake amount
 - lock minutes
 - max users
@@ -92,6 +119,7 @@ The admin page currently includes:
   - grouped by user
   - shows what each user picked
   - shows settlement status and amount when available
+- all of the above user/prediction data is scoped to the currently selected room
 
 ## User Management Logic
 
@@ -124,6 +152,8 @@ The admin page currently includes:
   Cloudflare Pages + D1 config.
 - [wrangler.sync.toml](C:/Users/ShanKai/Projects/WC2026Guess/wrangler.sync.toml)
   Optional scheduled sync worker config.
+- [migrations/0004_multi_pool.sql](C:/Users/ShanKai/Projects/WC2026Guess/migrations/0004_multi_pool.sql)
+  Migration that introduces pools and preserves old data in the default room.
 - [migrations](C:/Users/ShanKai/Projects/WC2026Guess/migrations)
   D1 migrations.
 
@@ -165,6 +195,9 @@ Recent development included:
 - admin user prediction overview
 - 24-hour visibility window for future matches
 - immediate public visibility of all picks
+- multi-pool support with preserved legacy data in the default room
+- per-room amount / lock / max-user management
+- per-room links using `?pool=...`
 
 ## If Continuing On Another Device
 
@@ -182,4 +215,3 @@ If production changes are needed:
 1. Commit locally.
 2. Push to GitHub.
 3. Deploy with Wrangler if not using an automated deployment path.
-

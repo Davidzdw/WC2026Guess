@@ -1,5 +1,6 @@
 const admin = {
   key: localStorage.getItem("wc_admin_key") || "",
+  selectedPoolId: localStorage.getItem("wc_admin_pool_id") || "",
   data: null,
 };
 
@@ -43,6 +44,16 @@ function formatDateTime(iso) {
   }).format(new Date(iso));
 }
 
+function currentPool() {
+  return admin.data?.pool;
+}
+
+function currentPoolShareUrl(pool = currentPool()) {
+  if (!pool) return "";
+  const origin = window.location.origin;
+  return `${origin}${pool.shareUrl}`;
+}
+
 function formatPredictionStatus(prediction) {
   if (!prediction.settlement) {
     if (Number(prediction.matchStatus) === 3) return "已结束，待结算";
@@ -56,9 +67,26 @@ function formatPredictionStatus(prediction) {
   return "已结算";
 }
 
+function renderPoolLinks() {
+  const pools = admin.data.pools || [];
+  $("#poolLinks").innerHTML = pools
+    .map(
+      (pool) => `
+        <div class="pool-link-row ${pool.id === currentPool().id ? "pool-link-row-active" : ""}">
+          <div>
+            <strong>${escapeHtml(pool.name)}</strong>
+            <div class="muted">${escapeHtml(currentPoolShareUrl(pool))}</div>
+          </div>
+          <button class="ghost-button copy-pool-link-button" data-pool-link="${escapeHtml(currentPoolShareUrl(pool))}" type="button">复制链接</button>
+        </div>
+      `
+    )
+    .join("");
+}
+
 function renderUsers() {
   const users = admin.data.adminUsers || admin.data.users || [];
-  const maxUsers = Number(admin.data.settings.maxUsers || 0);
+  const maxUsers = Number(admin.data.poolSettings.maxUsers || 0);
   $("#userList").innerHTML = `
     <div class="user-limit-note">当前 ${users.length} 人${maxUsers ? ` / 最多 ${maxUsers} 人` : ""}</div>
     ${users
@@ -138,39 +166,52 @@ function renderPredictionUsers() {
           `;
         })
         .join("")
-    : `<p class="muted">还没有任何用户竞猜记录。</p>`;
+    : `<p class="muted">当前房间还没有任何竞猜记录。</p>`;
 }
 
 function renderAdmin() {
   $("#adminLogin").classList.add("hidden");
   $("#adminPanel").classList.remove("hidden");
   $("#adminPanel").classList.add("active");
-  $("#appTitleInput").value = admin.data.settings.appTitle;
-  $("#stakeInput").value = admin.data.settings.stakeAmount;
-  $("#lockInput").value = admin.data.settings.lockMinutes;
-  $("#maxUsersInput").value = admin.data.settings.maxUsers || 50;
-  $("#autoSyncInput").checked = Boolean(admin.data.settings.autoSyncEnabled);
-  $("#autoSyncMinutesInput").value = Math.max(60, Number(admin.data.settings.autoSyncMinutes || 60));
-  $("#syncStatus").textContent = `上次同步：${formatDateTime(admin.data.settings.lastSyncAt)}`;
+
+  admin.selectedPoolId = currentPool().id;
+  localStorage.setItem("wc_admin_pool_id", admin.selectedPoolId);
+
+  $("#poolSelect").innerHTML = admin.data.pools
+    .map((pool) => `<option value="${pool.id}">${escapeHtml(pool.name)} (${escapeHtml(pool.slug)})</option>`)
+    .join("");
+  $("#poolSelect").value = currentPool().id;
+
+  $("#appTitleInput").value = admin.data.globalSettings.appTitle;
+  $("#poolNameInput").value = currentPool().name;
+  $("#stakeInput").value = admin.data.poolSettings.stakeAmount;
+  $("#lockInput").value = admin.data.poolSettings.lockMinutes;
+  $("#maxUsersInput").value = admin.data.poolSettings.maxUsers || 50;
+  $("#autoSyncInput").checked = Boolean(admin.data.globalSettings.autoSyncEnabled);
+  $("#autoSyncMinutesInput").value = Math.max(60, Number(admin.data.globalSettings.autoSyncMinutes || 60));
+  $("#syncStatus").textContent = `上次同步：${formatDateTime(admin.data.globalSettings.lastSyncAt)}`;
 
   const settled = admin.data.matches.filter((match) => match.settlement).length;
   const locked = admin.data.matches.filter((match) => match.locked && Number(match.matchStatus) !== 3).length;
   const users = (admin.data.adminUsers || admin.data.users || []).length;
-  const maxUsers = admin.data.settings.maxUsers || 50;
+  const maxUsers = admin.data.poolSettings.maxUsers || 50;
   const predictions = admin.data.predictionCount || 0;
   $("#adminOverview").innerHTML = `
+    <div class="overview-tile">房间<strong>${escapeHtml(currentPool().name)}</strong></div>
     <div class="overview-tile">用户数<strong>${users}/${maxUsers}</strong></div>
     <div class="overview-tile">已结算比赛<strong>${settled}</strong></div>
-    <div class="overview-tile">已锁定未完赛<strong>${locked}</strong></div>
     <div class="overview-tile">预测数<strong>${predictions}</strong></div>
   `;
+
+  renderPoolLinks();
   renderUsers();
   renderPredictionUsers();
 }
 
-async function loadAdmin() {
+async function loadAdmin(poolId = admin.selectedPoolId) {
   if (!admin.key) return;
-  admin.data = await api("/api/admin/state");
+  const suffix = poolId ? `?poolId=${encodeURIComponent(poolId)}` : "";
+  admin.data = await api(`/api/admin/state${suffix}`);
   renderAdmin();
 }
 
@@ -188,13 +229,40 @@ $("#adminKeyForm").addEventListener("submit", async (event) => {
   }
 });
 
+$("#poolSelect").addEventListener("change", async (event) => {
+  admin.selectedPoolId = event.target.value;
+  await loadAdmin(admin.selectedPoolId);
+});
+
+$("#createPoolForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const result = await api("/api/admin/pools/create", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("#newPoolNameInput").value,
+        slug: $("#newPoolSlugInput").value,
+      }),
+    });
+    $("#newPoolNameInput").value = "";
+    $("#newPoolSlugInput").value = "";
+    admin.selectedPoolId = result.pool.id;
+    await loadAdmin(admin.selectedPoolId);
+    toast("新房间已创建");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 $("#settingsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     await api("/api/admin/settings", {
       method: "POST",
       body: JSON.stringify({
+        poolId: currentPool().id,
         appTitle: $("#appTitleInput").value,
+        poolName: $("#poolNameInput").value,
         stakeAmount: $("#stakeInput").value,
         lockMinutes: $("#lockInput").value,
         maxUsers: $("#maxUsersInput").value,
@@ -202,7 +270,7 @@ $("#settingsForm").addEventListener("submit", async (event) => {
         autoSyncMinutes: $("#autoSyncMinutesInput").value,
       }),
     });
-    await loadAdmin();
+    await loadAdmin(currentPool().id);
     toast("设置已保存");
   } catch (error) {
     toast(error.message);
@@ -214,7 +282,7 @@ $("#syncButton").addEventListener("click", async () => {
     $("#syncButton").disabled = true;
     $("#syncStatus").textContent = "正在同步网易赛程和赛果...";
     const result = await api("/api/admin/sync", { method: "POST", body: "{}" });
-    await loadAdmin();
+    await loadAdmin(currentPool().id);
     toast(`已同步 ${result.updated} 场`);
   } catch (error) {
     toast(error.message);
@@ -225,9 +293,9 @@ $("#syncButton").addEventListener("click", async () => {
 
 $("#settleButton").addEventListener("click", async () => {
   try {
-    await api("/api/admin/settle", { method: "POST", body: "{}" });
-    await loadAdmin();
-    toast("已结算可结算比赛");
+    await api("/api/admin/settle", { method: "POST", body: JSON.stringify({ poolId: currentPool().id }) });
+    await loadAdmin(currentPool().id);
+    toast("已结算当前房间可结算比赛");
   } catch (error) {
     toast(error.message);
   }
@@ -243,9 +311,9 @@ $("#userList").addEventListener("click", async (event) => {
     if (event.target.matches(".save-user-button")) {
       await api("/api/admin/users/update", {
         method: "POST",
-        body: JSON.stringify({ userId, name }),
+        body: JSON.stringify({ poolId: currentPool().id, userId, name }),
       });
-      await loadAdmin();
+      await loadAdmin(currentPool().id);
       toast("用户名称已保存");
     }
 
@@ -254,14 +322,21 @@ $("#userList").addEventListener("click", async (event) => {
       if (!confirmed) return;
       await api("/api/admin/users/delete", {
         method: "POST",
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ poolId: currentPool().id, userId }),
       });
-      await loadAdmin();
+      await loadAdmin(currentPool().id);
       toast("用户已移除");
     }
   } catch (error) {
     toast(error.message);
   }
+});
+
+$("#poolLinks").addEventListener("click", async (event) => {
+  const button = event.target.closest(".copy-pool-link-button");
+  if (!button) return;
+  await navigator.clipboard.writeText(button.dataset.poolLink || "");
+  toast("房间链接已复制");
 });
 
 loadAdmin().catch(() => {

@@ -5,6 +5,9 @@ const GROUP_STAGE_ID = 232934;
 const MATCH_SETTLE_DELAY_MS = 2 * 60 * 60 * 1000;
 const MATCH_VISIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+const DEFAULT_POOL_ID = "pool_default";
+const DEFAULT_POOL_SLUG = "main";
+
 const STAGE_NAMES = {
   232934: "小组赛",
   232927: "1/16决赛",
@@ -15,13 +18,16 @@ const STAGE_NAMES = {
   232932: "决赛",
 };
 
-const DEFAULT_SETTINGS = {
-  stakeAmount: 10,
-  lockMinutes: 60,
+const DEFAULT_GLOBAL_SETTINGS = {
   appTitle: "2026 世界杯微信群竞猜",
   lastSyncAt: null,
   autoSyncEnabled: true,
   autoSyncMinutes: 60,
+};
+
+const DEFAULT_POOL_SETTINGS = {
+  stakeAmount: 10,
+  lockMinutes: 60,
   maxUsers: 50,
 };
 
@@ -66,16 +72,22 @@ function chinaTimeFromMs(ms) {
   }).format(new Date(ms));
 }
 
-function parseSetting(key, value) {
-  if (value == null) return DEFAULT_SETTINGS[key];
-  if (["stakeAmount", "lockMinutes", "autoSyncMinutes", "maxUsers"].includes(key)) return Number(value);
+function parseGlobalSetting(key, value) {
+  if (value == null) return DEFAULT_GLOBAL_SETTINGS[key];
+  if (key === "autoSyncMinutes") return Number(value);
   if (key === "autoSyncEnabled") return value === "true";
   if (key === "lastSyncAt") return value || null;
   return value;
 }
 
-async function ensureSettings(db) {
-  const statements = Object.entries(DEFAULT_SETTINGS).map(([key, value]) =>
+function parsePoolSetting(key, value) {
+  if (value == null) return DEFAULT_POOL_SETTINGS[key];
+  if (["stakeAmount", "lockMinutes", "maxUsers"].includes(key)) return Number(value);
+  return value;
+}
+
+async function ensureGlobalSettings(db) {
+  const statements = Object.entries(DEFAULT_GLOBAL_SETTINGS).map(([key, value]) =>
     db
       .prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
       .bind(key, value == null ? "" : String(value))
@@ -83,20 +95,100 @@ async function ensureSettings(db) {
   await db.batch(statements);
 }
 
-async function readSettings(db) {
-  await ensureSettings(db);
+async function ensureDefaultPool(db) {
+  await ensureGlobalSettings(db);
+  const appTitleRow = await db.prepare("SELECT value FROM settings WHERE key = 'appTitle'").first();
+  const poolName = String(appTitleRow?.value || DEFAULT_GLOBAL_SETTINGS.appTitle);
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO pools (id, slug, name, created_at, updated_at, is_default)
+       VALUES (?, ?, ?, ?, ?, 1)`
+    )
+    .bind(DEFAULT_POOL_ID, DEFAULT_POOL_SLUG, poolName, nowIso(), nowIso())
+    .run();
+
+  const poolSettingPairs = Object.entries(DEFAULT_POOL_SETTINGS);
+  const statements = [];
+  for (const [key, defaultValue] of poolSettingPairs) {
+    const globalRow = await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first();
+    const value = globalRow?.value ?? String(defaultValue);
+    statements.push(
+      db
+        .prepare("INSERT OR IGNORE INTO pool_settings (pool_id, key, value) VALUES (?, ?, ?)")
+        .bind(DEFAULT_POOL_ID, key, String(value))
+    );
+  }
+  if (statements.length) await db.batch(statements);
+}
+
+async function getPools(db) {
+  await ensureDefaultPool(db);
+  const rows = await db.prepare("SELECT * FROM pools ORDER BY is_default DESC, created_at ASC").all();
+  return (rows.results || []).map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    isDefault: Boolean(row.is_default),
+    shareUrl: row.slug === DEFAULT_POOL_SLUG ? "/" : `/?pool=${encodeURIComponent(row.slug)}`,
+  }));
+}
+
+async function resolvePool(db, { poolId, poolSlug } = {}) {
+  await ensureDefaultPool(db);
+  let row = null;
+  if (poolId) {
+    row = await db.prepare("SELECT * FROM pools WHERE id = ?").bind(poolId).first();
+  } else {
+    const slug = String(poolSlug || DEFAULT_POOL_SLUG);
+    row = await db.prepare("SELECT * FROM pools WHERE slug = ?").bind(slug).first();
+  }
+  if (!row) throw new Error("竞猜房间不存在");
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    isDefault: Boolean(row.is_default),
+    shareUrl: row.slug === DEFAULT_POOL_SLUG ? "/" : `/?pool=${encodeURIComponent(row.slug)}`,
+  };
+}
+
+async function readGlobalSettings(db) {
+  await ensureGlobalSettings(db);
   const rows = await db.prepare("SELECT key, value FROM settings").all();
-  const settings = { ...DEFAULT_SETTINGS };
+  const settings = { ...DEFAULT_GLOBAL_SETTINGS };
   for (const row of rows.results || []) {
-    if (row.key in settings) settings[row.key] = parseSetting(row.key, row.value);
+    if (row.key in settings) settings[row.key] = parseGlobalSetting(row.key, row.value);
   }
   return settings;
 }
 
-async function writeSetting(db, key, value) {
+async function readPoolSettings(db, poolId) {
+  await ensureDefaultPool(db);
+  const rows = await db.prepare("SELECT key, value FROM pool_settings WHERE pool_id = ?").bind(poolId).all();
+  const settings = { ...DEFAULT_POOL_SETTINGS };
+  for (const row of rows.results || []) {
+    if (row.key in settings) settings[row.key] = parsePoolSetting(row.key, row.value);
+  }
+  return settings;
+}
+
+async function writeGlobalSetting(db, key, value) {
   await db
     .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .bind(key, value == null ? "" : String(value))
+    .run();
+}
+
+async function writePoolSetting(db, poolId, key, value) {
+  await db
+    .prepare(
+      "INSERT INTO pool_settings (pool_id, key, value) VALUES (?, ?, ?) ON CONFLICT(pool_id, key) DO UPDATE SET value = excluded.value"
+    )
+    .bind(poolId, key, value == null ? "" : String(value))
     .run();
 }
 
@@ -167,6 +259,7 @@ function isVisibleForPrediction(match) {
 function settlementFromRow(row) {
   if (!row) return null;
   return {
+    poolId: row.pool_id,
     matchId: String(row.match_id),
     settledAt: row.settled_at,
     chinaDate: row.china_date,
@@ -185,10 +278,9 @@ function publicMatch(match, settings, prediction, settlement, publicPredictions 
     prediction && settlement?.entries
       ? settlement.entries.find((entry) => entry.userId === prediction.userId) || null
       : null;
-  const locked = isLocked(match, settings);
   return {
     ...match,
-    locked,
+    locked: isLocked(match, settings),
     allowedPicks: allowedPicks(match),
     myPrediction: prediction || null,
     mySettlementEntry,
@@ -211,14 +303,17 @@ async function getAllMatches(db) {
   return (rows.results || []).map(parseMatch);
 }
 
-async function getSettlements(db) {
-  const rows = await db.prepare("SELECT * FROM settlements").all();
+async function getSettlements(db, poolId) {
+  const rows = await db.prepare("SELECT * FROM settlements WHERE pool_id = ?").bind(poolId).all();
   return (rows.results || []).map(settlementFromRow);
 }
 
-async function getUserPredictions(db, userId) {
+async function getUserPredictions(db, poolId, userId) {
   if (!userId) return {};
-  const rows = await db.prepare("SELECT * FROM predictions WHERE user_id = ?").bind(userId).all();
+  const rows = await db
+    .prepare("SELECT * FROM predictions WHERE pool_id = ? AND user_id = ?")
+    .bind(poolId, userId)
+    .all();
   return Object.fromEntries(
     (rows.results || []).map((row) => [
       String(row.match_id),
@@ -234,14 +329,16 @@ async function getUserPredictions(db, userId) {
   );
 }
 
-async function getPublicPredictions(db) {
+async function getPublicPredictions(db, poolId) {
   const rows = await db
     .prepare(
       `SELECT p.match_id, p.user_id, p.pick, p.pick_label, p.updated_at, u.name
        FROM predictions p
-       LEFT JOIN users u ON u.id = p.user_id
+       LEFT JOIN users u ON u.pool_id = p.pool_id AND u.id = p.user_id
+       WHERE p.pool_id = ?
        ORDER BY p.updated_at ASC`
     )
+    .bind(poolId)
     .all();
   const byMatch = {};
   for (const row of rows.results || []) {
@@ -258,10 +355,10 @@ async function getPublicPredictions(db) {
   return byMatch;
 }
 
-async function dailySummary(db, date) {
+async function dailySummary(db, poolId, date) {
   const rows = await db
-    .prepare("SELECT * FROM settlements WHERE china_date = ? ORDER BY CAST(match_id AS INTEGER)")
-    .bind(date)
+    .prepare("SELECT * FROM settlements WHERE pool_id = ? AND china_date = ? ORDER BY CAST(match_id AS INTEGER)")
+    .bind(poolId, date)
     .all();
   const settlements = (rows.results || []).map(settlementFromRow);
   const balances = {};
@@ -322,20 +419,22 @@ function allTimeLeaderboard(settlements) {
     .sort((a, b) => b.amount - a.amount);
 }
 
-async function predictionCount(db) {
-  const row = await db.prepare("SELECT COUNT(*) AS count FROM predictions").first();
+async function predictionCount(db, poolId) {
+  const row = await db.prepare("SELECT COUNT(*) AS count FROM predictions WHERE pool_id = ?").bind(poolId).first();
   return Number(row?.count || 0);
 }
 
-async function adminUsers(db) {
+async function adminUsers(db, poolId) {
   const rows = await db
     .prepare(
       `SELECT u.id, u.name, u.created_at, u.updated_at, COUNT(p.match_id) AS prediction_count
        FROM users u
-       LEFT JOIN predictions p ON p.user_id = u.id
+       LEFT JOIN predictions p ON p.pool_id = u.pool_id AND p.user_id = u.id
+       WHERE u.pool_id = ?
        GROUP BY u.id
        ORDER BY u.created_at ASC`
     )
+    .bind(poolId)
     .all();
   return (rows.results || []).map((row) => ({
     id: row.id,
@@ -346,9 +445,9 @@ async function adminUsers(db) {
   }));
 }
 
-async function adminPredictionUsers(db) {
+async function adminPredictionUsers(db, poolId) {
   const [users, predictionRows] = await Promise.all([
-    adminUsers(db),
+    adminUsers(db, poolId),
     db
       .prepare(
         `SELECT
@@ -372,11 +471,13 @@ async function adminPredictionUsers(db) {
            s.score_text,
            s.entries
          FROM predictions p
-         INNER JOIN users u ON u.id = p.user_id
+         INNER JOIN users u ON u.pool_id = p.pool_id AND u.id = p.user_id
          INNER JOIN matches m ON m.id = p.match_id
-         LEFT JOIN settlements s ON s.match_id = p.match_id
+         LEFT JOIN settlements s ON s.pool_id = p.pool_id AND s.match_id = p.match_id
+         WHERE p.pool_id = ?
          ORDER BY u.name ASC, m.kickoff_ms DESC, p.updated_at DESC`
       )
+      .bind(poolId)
       .all(),
   ]);
 
@@ -427,25 +528,28 @@ async function adminPredictionUsers(db) {
   return Object.values(byUserId);
 }
 
-async function stateFor(db, userId, options = {}) {
-  const settings = await readSettings(db);
-  if (!options.skipAutoSync) await maybeAutoSync(db, settings);
+async function stateFor(db, userId, poolRef = {}, options = {}) {
+  const pool = await resolvePool(db, poolRef);
+  const [globalSettings, poolSettings] = await Promise.all([readGlobalSettings(db), readPoolSettings(db, pool.id)]);
+  if (!options.skipAutoSync) await maybeAutoSync(db, globalSettings);
 
   const [user, usersRows, matches, predictionsByMatch, publicPredictionsByMatch, settlements] = await Promise.all([
-    userId ? db.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first() : null,
-    db.prepare("SELECT * FROM users ORDER BY name").all(),
+    userId ? db.prepare("SELECT * FROM users WHERE pool_id = ? AND id = ?").bind(pool.id, userId).first() : null,
+    db.prepare("SELECT * FROM users WHERE pool_id = ? ORDER BY name").bind(pool.id).all(),
     getAllMatches(db),
-    getUserPredictions(db, userId),
-    getPublicPredictions(db),
-    getSettlements(db),
+    getUserPredictions(db, pool.id, userId),
+    getPublicPredictions(db, pool.id),
+    getSettlements(db, pool.id),
   ]);
 
+  const settings = { ...globalSettings, ...poolSettings };
   const settlementsByMatch = Object.fromEntries(settlements.map((settlement) => [settlement.matchId, settlement]));
   const dates = [...new Set(matches.map((match) => match.chinaDate))].sort();
   const today = chinaDateFromMs(Date.now());
   const selectedDate = dates.includes(today) ? today : dates.find((date) => date >= today) || dates[0];
 
   return {
+    pool,
     settings,
     user: toPublicUser(user),
     users: (usersRows.results || []).map(toPublicUser),
@@ -460,14 +564,17 @@ async function stateFor(db, userId, options = {}) {
     ),
     dates,
     selectedDate,
-    todaySummary: await dailySummary(db, selectedDate),
+    todaySummary: await dailySummary(db, pool.id, selectedDate),
     leaderboard: allTimeLeaderboard(settlements),
   };
 }
 
-async function settleMatch(db, match, force = false) {
+async function settleMatch(db, poolId, match, force = false) {
   if (!force) {
-    const existing = await db.prepare("SELECT * FROM settlements WHERE match_id = ?").bind(match.id).first();
+    const existing = await db
+      .prepare("SELECT * FROM settlements WHERE pool_id = ? AND match_id = ?")
+      .bind(poolId, match.id)
+      .first();
     if (existing) return settlementFromRow(existing);
   }
   if (Number(match.matchStatus) !== 3 && Number(match.footballLiveScore?.matchStatus) !== 3) return null;
@@ -477,10 +584,10 @@ async function settleMatch(db, match, force = false) {
     .prepare(
       `SELECT p.*, u.name
        FROM predictions p
-       LEFT JOIN users u ON u.id = p.user_id
-       WHERE p.match_id = ?`
+       LEFT JOIN users u ON u.pool_id = p.pool_id AND u.id = p.user_id
+       WHERE p.pool_id = ? AND p.match_id = ?`
     )
-    .bind(match.id)
+    .bind(poolId, match.id)
     .all();
   const predictions = (rows.results || []).map((row) => ({
     userId: row.user_id,
@@ -493,6 +600,7 @@ async function settleMatch(db, match, force = false) {
 
   const settledAt = nowIso();
   const base = {
+    poolId,
     matchId: match.id,
     settledAt,
     chinaDate: match.chinaDate,
@@ -563,9 +671,9 @@ async function settleMatch(db, match, force = false) {
   await db
     .prepare(
       `INSERT INTO settlements
-        (match_id, settled_at, china_date, result, result_label, stake_amount, score_text, status, void_reason, entries)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(match_id) DO UPDATE SET
+        (pool_id, match_id, settled_at, china_date, result, result_label, stake_amount, score_text, status, void_reason, entries)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(pool_id, match_id) DO UPDATE SET
         settled_at = excluded.settled_at,
         china_date = excluded.china_date,
         result = excluded.result,
@@ -577,6 +685,7 @@ async function settleMatch(db, match, force = false) {
         entries = excluded.entries`
     )
     .bind(
+      settlement.poolId,
       settlement.matchId,
       settlement.settledAt,
       settlement.chinaDate,
@@ -593,12 +702,15 @@ async function settleMatch(db, match, force = false) {
   return settlement;
 }
 
-async function settleCompletedMatches(db, force = false) {
+async function settleCompletedMatches(db, poolId = null, force = false) {
   const matches = await getAllMatches(db);
+  const pools = poolId ? [await resolvePool(db, { poolId })] : await getPools(db);
   const settlements = [];
-  for (const match of matches) {
-    const settlement = await settleMatch(db, match, force);
-    if (settlement) settlements.push(settlement);
+  for (const pool of pools) {
+    for (const match of matches) {
+      const settlement = await settleMatch(db, pool.id, match, force);
+      if (settlement) settlements.push(settlement);
+    }
   }
   return settlements;
 }
@@ -684,16 +796,16 @@ async function syncFromNetease(db) {
     updated += 1;
   }
   if (statements.length) await db.batch(statements);
-  await writeSetting(db, "lastSyncAt", now);
-  await settleCompletedMatches(db, false);
+  await writeGlobalSetting(db, "lastSyncAt", now);
+  await settleCompletedMatches(db, null, false);
   return { updated, lastSyncAt: now };
 }
 
-async function maybeAutoSync(db, settings) {
-  if (!settings.autoSyncEnabled) return false;
+async function maybeAutoSync(db, globalSettings) {
+  if (!globalSettings.autoSyncEnabled) return false;
   const now = Date.now();
-  const lastSyncMs = settings.lastSyncAt ? Date.parse(settings.lastSyncAt) : 0;
-  const intervalMs = Math.max(60, Number(settings.autoSyncMinutes || 60)) * 60 * 1000;
+  const lastSyncMs = globalSettings.lastSyncAt ? Date.parse(globalSettings.lastSyncAt) : 0;
+  const intervalMs = Math.max(60, Number(globalSettings.autoSyncMinutes || 60)) * 60 * 1000;
   if (lastSyncMs && now - lastSyncMs < intervalMs) return false;
 
   const rows = await db
@@ -720,6 +832,47 @@ async function maybeAutoSync(db, settings) {
   }
 }
 
+function sanitizePoolSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+async function createPool(db, body) {
+  const name = String(body.name || "").trim().slice(0, 40);
+  const slug = sanitizePoolSlug(body.slug);
+  if (!name) throw new Error("请填写房间名称");
+  if (!slug) throw new Error("请填写房间代码");
+
+  const existing = await db.prepare("SELECT id FROM pools WHERE slug = ?").bind(slug).first();
+  if (existing) throw new Error("房间代码已存在");
+
+  const id = crypto.randomUUID();
+  const now = nowIso();
+  await db
+    .prepare(
+      `INSERT INTO pools (id, slug, name, created_at, updated_at, is_default)
+       VALUES (?, ?, ?, ?, ?, 0)`
+    )
+    .bind(id, slug, name, now, now)
+    .run();
+
+  const stakeAmount = Math.max(1, Math.round(Number(body.stakeAmount || DEFAULT_POOL_SETTINGS.stakeAmount) * 100) / 100);
+  const lockMinutes = Math.max(1, Math.round(Number(body.lockMinutes || DEFAULT_POOL_SETTINGS.lockMinutes)));
+  const maxUsers = Math.max(1, Math.round(Number(body.maxUsers || DEFAULT_POOL_SETTINGS.maxUsers)));
+
+  await db.batch([
+    db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'stakeAmount', ?)").bind(id, String(stakeAmount)),
+    db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'lockMinutes', ?)").bind(id, String(lockMinutes)),
+    db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'maxUsers', ?)").bind(id, String(maxUsers)),
+  ]);
+
+  return resolvePool(db, { poolId: id });
+}
+
 async function requireAdmin(request, env) {
   if (!env.ADMIN_KEY) {
     return { ok: false, response: json({ error: "还没有配置 ADMIN_KEY 环境变量" }, 500) };
@@ -741,44 +894,49 @@ async function handleApi(context) {
   const method = request.method.toUpperCase();
 
   if (method === "GET" && pathname === "/api/state") {
-    return json(await stateFor(db, url.searchParams.get("userId")));
+    return json(await stateFor(db, url.searchParams.get("userId"), { poolSlug: url.searchParams.get("pool") }));
   }
 
   if (method === "POST" && pathname === "/api/users") {
     const body = await readBody(request);
+    const pool = await resolvePool(db, { poolSlug: body.pool || DEFAULT_POOL_SLUG });
     const id = String(body.userId || crypto.randomUUID());
     const name = String(body.name || "").trim().slice(0, 24);
     if (!name) return json({ error: "请填写名称" }, 400);
 
-    const [settings, existingUser, userCountRow] = await Promise.all([
-      readSettings(db),
-      db.prepare("SELECT id FROM users WHERE id = ?").bind(id).first(),
-      db.prepare("SELECT COUNT(*) AS count FROM users").first(),
+    const [poolSettings, existingUser, userCountRow] = await Promise.all([
+      readPoolSettings(db, pool.id),
+      db.prepare("SELECT id FROM users WHERE pool_id = ? AND id = ?").bind(pool.id, id).first(),
+      db.prepare("SELECT COUNT(*) AS count FROM users WHERE pool_id = ?").bind(pool.id).first(),
     ]);
-    if (!existingUser && Number(userCountRow?.count || 0) >= Number(settings.maxUsers || DEFAULT_SETTINGS.maxUsers)) {
-      return json({ error: "用户人数已满，请联系管理员" }, 409);
+    if (!existingUser && Number(userCountRow?.count || 0) >= Number(poolSettings.maxUsers || DEFAULT_POOL_SETTINGS.maxUsers)) {
+      return json({ error: "该房间用户人数已满，请联系管理员" }, 409);
     }
 
     const now = nowIso();
     await db
       .prepare(
-        `INSERT INTO users (id, name, created_at, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`
+        `INSERT INTO users (pool_id, id, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(pool_id, id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`
       )
-      .bind(id, name, now, now)
+      .bind(pool.id, id, name, now, now)
       .run();
-    return json({ user: { id, name, createdAt: now }, state: await stateFor(db, id, { skipAutoSync: true }) });
+    return json({
+      user: { id, name, createdAt: now },
+      state: await stateFor(db, id, { poolId: pool.id }, { skipAutoSync: true }),
+    });
   }
 
   if (method === "POST" && pathname === "/api/predictions") {
     const body = await readBody(request);
+    const pool = await resolvePool(db, { poolSlug: body.pool || DEFAULT_POOL_SLUG });
     const userId = String(body.userId || "");
     const matchId = String(body.matchId || "");
     const pick = String(body.pick || "");
     const [settings, user, matchRow] = await Promise.all([
-      readSettings(db),
-      db.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first(),
+      readPoolSettings(db, pool.id),
+      db.prepare("SELECT * FROM users WHERE pool_id = ? AND id = ?").bind(pool.id, userId).first(),
       db.prepare("SELECT * FROM matches WHERE id = ?").bind(matchId).first(),
     ]);
     if (!user) return json({ error: "请先填写名称" }, 401);
@@ -792,22 +950,23 @@ async function handleApi(context) {
     const now = nowIso();
     await db
       .prepare(
-        `INSERT INTO predictions (match_id, user_id, pick, pick_label, stake_amount, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(match_id, user_id) DO UPDATE SET
+        `INSERT INTO predictions (pool_id, match_id, user_id, pick, pick_label, stake_amount, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(pool_id, match_id, user_id) DO UPDATE SET
           pick = excluded.pick,
           pick_label = excluded.pick_label,
           stake_amount = excluded.stake_amount,
           updated_at = excluded.updated_at`
       )
-      .bind(matchId, userId, pick, outcomeLabel(pick), Number(settings.stakeAmount), now)
+      .bind(pool.id, matchId, userId, pick, outcomeLabel(pick), Number(settings.stakeAmount), now)
       .run();
     return json({ match: publicMatch(match, settings, { userId, matchId, pick, pickLabel: outcomeLabel(pick) }, null) });
   }
 
   if (method === "GET" && pathname === "/api/summary") {
+    const pool = await resolvePool(db, { poolSlug: url.searchParams.get("pool") || DEFAULT_POOL_SLUG });
     const date = url.searchParams.get("date") || chinaDateFromMs(Date.now());
-    return json(await dailySummary(db, date));
+    return json(await dailySummary(db, pool.id, date));
   }
 
   if (pathname.startsWith("/api/admin")) {
@@ -815,46 +974,70 @@ async function handleApi(context) {
     if (!admin.ok) return admin.response;
 
     if (method === "GET" && pathname === "/api/admin/state") {
+      const poolRef = {
+        poolId: url.searchParams.get("poolId") || undefined,
+        poolSlug: url.searchParams.get("pool") || DEFAULT_POOL_SLUG,
+      };
+      const baseState = await stateFor(db, null, poolRef);
       return json({
-        ...(await stateFor(db, null)),
-        adminKey: "ADMIN_KEY 已配置",
-        predictionCount: await predictionCount(db),
-        adminUsers: await adminUsers(db),
-        adminPredictionUsers: await adminPredictionUsers(db),
+        ...baseState,
+        pools: await getPools(db),
+        globalSettings: await readGlobalSettings(db),
+        poolSettings: await readPoolSettings(db, baseState.pool.id),
+        predictionCount: await predictionCount(db, baseState.pool.id),
+        adminUsers: await adminUsers(db, baseState.pool.id),
+        adminPredictionUsers: await adminPredictionUsers(db, baseState.pool.id),
       });
+    }
+
+    if (method === "POST" && pathname === "/api/admin/pools/create") {
+      const body = await readBody(request);
+      return json({ ok: true, pool: await createPool(db, body) });
     }
 
     if (method === "POST" && pathname === "/api/admin/settings") {
       const body = await readBody(request);
-      const settings = {
-        stakeAmount: Math.max(1, Math.round(Number(body.stakeAmount || 10) * 100) / 100),
-        lockMinutes: Math.max(1, Math.round(Number(body.lockMinutes || 60))),
-        appTitle: String(body.appTitle || DEFAULT_SETTINGS.appTitle).trim().slice(0, 40),
+      const pool = await resolvePool(db, { poolId: body.poolId });
+      const globalSettings = {
+        appTitle: String(body.appTitle || DEFAULT_GLOBAL_SETTINGS.appTitle).trim().slice(0, 40),
         autoSyncEnabled: Boolean(body.autoSyncEnabled),
-        autoSyncMinutes: Math.max(60, Math.round(Number(body.autoSyncMinutes || 60))),
-        maxUsers: Math.max(1, Math.round(Number(body.maxUsers || DEFAULT_SETTINGS.maxUsers))),
+        autoSyncMinutes: Math.max(60, Math.round(Number(body.autoSyncMinutes || DEFAULT_GLOBAL_SETTINGS.autoSyncMinutes))),
       };
+      const poolSettings = {
+        stakeAmount: Math.max(1, Math.round(Number(body.stakeAmount || DEFAULT_POOL_SETTINGS.stakeAmount) * 100) / 100),
+        lockMinutes: Math.max(1, Math.round(Number(body.lockMinutes || DEFAULT_POOL_SETTINGS.lockMinutes))),
+        maxUsers: Math.max(1, Math.round(Number(body.maxUsers || DEFAULT_POOL_SETTINGS.maxUsers))),
+      };
+      const poolName = String(body.poolName || pool.name).trim().slice(0, 40) || pool.name;
+
       await db.batch([
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'stakeAmount'").bind(String(settings.stakeAmount)),
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'lockMinutes'").bind(String(settings.lockMinutes)),
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'appTitle'").bind(settings.appTitle),
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncEnabled'").bind(String(settings.autoSyncEnabled)),
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncMinutes'").bind(String(settings.autoSyncMinutes)),
-        db.prepare("UPDATE settings SET value = ? WHERE key = 'maxUsers'").bind(String(settings.maxUsers)),
+        db.prepare("UPDATE pools SET name = ?, updated_at = ? WHERE id = ?").bind(poolName, nowIso(), pool.id),
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'appTitle'").bind(globalSettings.appTitle),
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncEnabled'").bind(String(globalSettings.autoSyncEnabled)),
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'autoSyncMinutes'").bind(String(globalSettings.autoSyncMinutes)),
+        db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'stakeAmount', ?) ON CONFLICT(pool_id, key) DO UPDATE SET value = excluded.value").bind(pool.id, String(poolSettings.stakeAmount)),
+        db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'lockMinutes', ?) ON CONFLICT(pool_id, key) DO UPDATE SET value = excluded.value").bind(pool.id, String(poolSettings.lockMinutes)),
+        db.prepare("INSERT INTO pool_settings (pool_id, key, value) VALUES (?, 'maxUsers', ?) ON CONFLICT(pool_id, key) DO UPDATE SET value = excluded.value").bind(pool.id, String(poolSettings.maxUsers)),
       ]);
-      return json({ settings: await readSettings(db) });
+      return json({
+        ok: true,
+        pool: await resolvePool(db, { poolId: pool.id }),
+        globalSettings: await readGlobalSettings(db),
+        poolSettings: await readPoolSettings(db, pool.id),
+      });
     }
 
     if (method === "POST" && pathname === "/api/admin/users/update") {
       const body = await readBody(request);
+      const pool = await resolvePool(db, { poolId: body.poolId });
       const userId = String(body.userId || "");
       const name = String(body.name || "").trim().slice(0, 24);
       if (!userId) return json({ error: "缺少用户 ID" }, 400);
       if (!name) return json({ error: "请填写用户名称" }, 400);
       const now = nowIso();
       const result = await db
-        .prepare("UPDATE users SET name = ?, updated_at = ? WHERE id = ?")
-        .bind(name, now, userId)
+        .prepare("UPDATE users SET name = ?, updated_at = ? WHERE pool_id = ? AND id = ?")
+        .bind(name, now, pool.id, userId)
         .run();
       if (!result.meta?.changes) return json({ error: "用户不存在" }, 404);
       return json({ ok: true, user: { id: userId, name, updatedAt: now } });
@@ -862,11 +1045,12 @@ async function handleApi(context) {
 
     if (method === "POST" && pathname === "/api/admin/users/delete") {
       const body = await readBody(request);
+      const pool = await resolvePool(db, { poolId: body.poolId });
       const userId = String(body.userId || "");
       if (!userId) return json({ error: "缺少用户 ID" }, 400);
       await db.batch([
-        db.prepare("DELETE FROM predictions WHERE user_id = ?").bind(userId),
-        db.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+        db.prepare("DELETE FROM predictions WHERE pool_id = ? AND user_id = ?").bind(pool.id, userId),
+        db.prepare("DELETE FROM users WHERE pool_id = ? AND id = ?").bind(pool.id, userId),
       ]);
       return json({ ok: true });
     }
@@ -874,13 +1058,15 @@ async function handleApi(context) {
     if (method === "POST" && pathname === "/api/admin/sync") return json(await syncFromNetease(db));
 
     if (method === "POST" && pathname === "/api/admin/auto-sync") {
-      const settings = await readSettings(db);
+      const settings = await readGlobalSettings(db);
       const synced = await maybeAutoSync(db, settings);
-      return json({ ok: true, synced, settings: await readSettings(db) });
+      return json({ ok: true, synced, settings: await readGlobalSettings(db) });
     }
 
     if (method === "POST" && pathname === "/api/admin/settle") {
-      const settlements = await settleCompletedMatches(db, false);
+      const body = await readBody(request);
+      const pool = await resolvePool(db, { poolId: body.poolId });
+      const settlements = await settleCompletedMatches(db, pool.id, false);
       return json({ ok: true, settlements: settlements.length });
     }
   }

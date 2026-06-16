@@ -29,11 +29,39 @@
 
       <section id="adminPanel" class="view hidden">
         <div class="admin-grid">
-          <form id="settingsForm" class="admin-section">
-            <p class="section-kicker">基础设置</p>
+          <div class="admin-section">
+            <p class="section-kicker">房间切换</p>
             <label>
-              应用标题
+              当前管理房间
+              <select id="poolSelect"></select>
+            </label>
+            <div id="poolLinks" class="pool-links"></div>
+          </div>
+
+          <form id="createPoolForm" class="admin-section">
+            <p class="section-kicker">新建房间</p>
+            <label>
+              房间名称
+              <input id="newPoolNameInput" maxlength="40" placeholder="例如：上海群" />
+            </label>
+            <label>
+              房间代码
+              <input id="newPoolSlugInput" maxlength="32" placeholder="例如：shanghai-group" />
+            </label>
+            <button type="submit">创建房间</button>
+          </form>
+        </div>
+
+        <div class="admin-grid">
+          <form id="settingsForm" class="admin-section">
+            <p class="section-kicker">当前房间设置</p>
+            <label>
+              站点标题
               <input id="appTitleInput" maxlength="40" />
+            </label>
+            <label>
+              当前房间名称
+              <input id="poolNameInput" maxlength="40" />
             </label>
             <label>
               每场投注金额（元）
@@ -44,7 +72,7 @@
               <input id="lockInput" type="number" min="1" step="1" />
             </label>
             <label>
-              最大用户数
+              当前房间最大用户数
               <input id="maxUsersInput" type="number" min="1" step="1" />
             </label>
             <label class="checkbox-label">
@@ -62,32 +90,32 @@
             <p class="section-kicker">赛程和结算</p>
             <div class="button-row">
               <button id="syncButton" type="button">手动同步网易接口</button>
-              <button id="settleButton" class="ghost-button" type="button">结算已完赛</button>
+              <button id="settleButton" class="ghost-button" type="button">结算当前房间</button>
             </div>
             <p id="syncStatus" class="muted"></p>
           </div>
         </div>
 
         <div class="admin-section wide">
-          <p class="section-kicker">运营概览</p>
+          <p class="section-kicker">当前房间概览</p>
           <div id="adminOverview" class="overview-grid"></div>
         </div>
 
         <div class="admin-section wide">
           <p class="section-kicker">用户管理</p>
-          <p class="muted">可以改名、查看预测数量、移除用户。移除用户会删除他的预测，但不会改写已经生成的历史结算记录。</p>
+          <p class="muted">以下内容只针对当前选中的房间。可以改名、查看预测数量、移除用户。</p>
           <div id="userList" class="user-list"></div>
         </div>
 
         <div class="admin-section wide">
           <p class="section-kicker">用户竞猜情况</p>
-          <p class="muted">按用户查看每个人当前已经提交的竞猜内容，方便你在后台快速核对。</p>
+          <p class="muted">按当前房间查看每个人已经提交的竞猜内容。</p>
           <div id="predictionUsers" class="prediction-users"></div>
         </div>
       </section>
     </main>
 
     <div id="toast" class="toast" role="status"></div>
-    <script src="/admin.js?v=20260612-admin-predictions"></script>
+    <script src="/admin.js?v=20260616-multi-pool"></script>
   </body>
 </html>

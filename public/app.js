@@ -1,13 +1,21 @@
 const MATCH_VISIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_POOL_SLUG = "main";
+
+const params = new URLSearchParams(window.location.search);
+const poolSlug = (params.get("pool") || DEFAULT_POOL_SLUG).trim() || DEFAULT_POOL_SLUG;
+const userStorageKey = `wc_user_id:${poolSlug}`;
+const legacyUserId = poolSlug === DEFAULT_POOL_SLUG ? localStorage.getItem("wc_user_id") : null;
 
 const state = {
   data: null,
-  userId: localStorage.getItem("wc_user_id") || crypto.randomUUID(),
+  poolSlug,
+  userId: localStorage.getItem(userStorageKey) || legacyUserId || crypto.randomUUID(),
   activeView: "matches",
   shouldAnchorToday: true,
 };
 
-localStorage.setItem("wc_user_id", state.userId);
+localStorage.setItem(userStorageKey, state.userId);
+if (poolSlug === DEFAULT_POOL_SLUG) localStorage.setItem("wc_user_id", state.userId);
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -51,6 +59,13 @@ function formatDateHeading(date) {
   return `${date} ${weekday}`;
 }
 
+function pageTitle() {
+  if (!state.data) return "世界杯竞猜";
+  const appTitle = state.data.settings.appTitle;
+  const poolName = state.data.pool?.name;
+  return poolName && poolName !== appTitle ? `${appTitle} · ${poolName}` : appTitle;
+}
+
 function upcomingWindowEndMs() {
   return Date.now() + MATCH_VISIBILITY_WINDOW_MS;
 }
@@ -80,9 +95,12 @@ function scrollToDate(date, behavior = "smooth") {
 
 function renderProfile() {
   const user = state.data.user;
-  $("#appTitle").textContent = state.data.settings.appTitle;
+  document.title = pageTitle();
+  $("#appTitle").textContent = pageTitle();
   $("#nameInput").value = user?.name || "";
-  $("#profileTitle").textContent = user ? `你好，${user.name}` : "填写后会记住在这台设备上";
+  $("#profileTitle").textContent = user
+    ? `你好，${user.name}`
+    : `加入「${state.data.pool.name}」后，这台设备会记住你的身份`;
 }
 
 function renderDateOptions() {
@@ -251,9 +269,14 @@ function renderMatches() {
 }
 
 function summaryText(summary) {
-  const lines = [`${summary.date} 世界杯竞猜结算`];
-  if (!summary.transfers.length) lines.push("今日无需转账。");
-  else summary.transfers.forEach((transfer) => lines.push(`${transfer.fromName} -> ${transfer.toName}: ${transfer.amount.toFixed(2)} 元`));
+  const lines = [`${state.data.pool.name} ${summary.date} 竞猜结算`];
+  if (!summary.transfers.length) {
+    lines.push("今日无需转账。");
+  } else {
+    summary.transfers.forEach((transfer) =>
+      lines.push(`${transfer.fromName} -> ${transfer.toName}: ${transfer.amount.toFixed(2)} 元`)
+    );
+  }
   return lines.join("\n");
 }
 
@@ -343,12 +366,12 @@ function render() {
 }
 
 async function loadState() {
-  state.data = await api(`/api/state?userId=${encodeURIComponent(state.userId)}`);
+  state.data = await api(`/api/state?userId=${encodeURIComponent(state.userId)}&pool=${encodeURIComponent(state.poolSlug)}`);
   render();
 }
 
 async function refreshSummary(date) {
-  const summary = await api(`/api/summary?date=${encodeURIComponent(date)}`);
+  const summary = await api(`/api/summary?date=${encodeURIComponent(date)}&pool=${encodeURIComponent(state.poolSlug)}`);
   renderSummary(summary);
 }
 
@@ -357,7 +380,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
   try {
     const payload = await api("/api/users", {
       method: "POST",
-      body: JSON.stringify({ userId: state.userId, name: $("#nameInput").value }),
+      body: JSON.stringify({ userId: state.userId, name: $("#nameInput").value, pool: state.poolSlug }),
     });
     state.data = payload.state;
     state.shouldAnchorToday = false;
@@ -378,6 +401,7 @@ $("#matchList").addEventListener("click", async (event) => {
         userId: state.userId,
         matchId: button.dataset.matchId,
         pick: button.dataset.pick,
+        pool: state.poolSlug,
       }),
     });
     state.shouldAnchorToday = false;
@@ -402,11 +426,14 @@ $("#todayButton").addEventListener("click", () => {
   const anchorDate = todayAnchorDate();
   if (anchorDate) scrollToDate(anchorDate);
 });
+
 $("#summaryDateSelect").addEventListener("change", (event) => refreshSummary(event.target.value));
+
 $("#refreshButton").addEventListener("click", () => {
   state.shouldAnchorToday = false;
   loadState().then(() => toast("已刷新"));
 });
+
 $("#copySummaryButton").addEventListener("click", async () => {
   const text = $("#copySummaryButton").dataset.copyText || "";
   await navigator.clipboard.writeText(text);
