@@ -2,7 +2,9 @@ const MATCH_VISIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_POOL_SLUG = "main";
 
 const params = new URLSearchParams(window.location.search);
-const poolSlug = (params.get("pool") || DEFAULT_POOL_SLUG).trim() || DEFAULT_POOL_SLUG;
+const requestedPoolSlug = (params.get("pool") || "").trim();
+const poolSlug = requestedPoolSlug || DEFAULT_POOL_SLUG;
+const hasExplicitPool = Boolean(requestedPoolSlug);
 const userStorageKey = `wc_user_id:${poolSlug}`;
 const legacyUserId = poolSlug === DEFAULT_POOL_SLUG ? localStorage.getItem("wc_user_id") : null;
 
@@ -25,6 +27,25 @@ function toast(message) {
   node.classList.add("show");
   window.clearTimeout(toast.timer);
   toast.timer = window.setTimeout(() => node.classList.remove("show"), 2200);
+}
+
+function renderPoolRequiredState() {
+  document.title = "世界杯竞猜";
+  $("#appTitle").textContent = "世界杯竞猜";
+  $("#profileTitle").textContent = "请使用房间专属链接进入竞猜";
+  $("#nameInput").value = "";
+  $("#nameInput").disabled = true;
+  $("#profileForm button").disabled = true;
+  $("#summaryDateSelect").innerHTML = "";
+  $("#copySummaryButton").disabled = true;
+  $("#todayButton").disabled = true;
+  document.querySelectorAll(".tab").forEach((tab) => (tab.disabled = true));
+  $("#matchList").innerHTML = `
+    <section class="summary-block room-entry-block">
+      <h3>这个首页不再直接进入默认房间</h3>
+      <p class="muted">请使用群里发出的专属房间链接，例如 <code>?pool=main</code> 或其他房间代码。</p>
+      <p class="muted">如果你是管理员，可以从 <a href="/admin">/admin</a> 查看并复制各个房间链接。</p>
+    </section>`;
 }
 
 async function api(path, options = {}) {
@@ -440,4 +461,8 @@ $("#copySummaryButton").addEventListener("click", async () => {
   toast("已复制，可以粘贴到微信群");
 });
 
-loadState().catch((error) => toast(error.message));
+if (!hasExplicitPool) {
+  renderPoolRequiredState();
+} else {
+  loadState().catch((error) => toast(error.message));
+}

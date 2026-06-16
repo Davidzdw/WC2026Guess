@@ -50,8 +50,11 @@ The repo is configured for Cloudflare Pages + Pages Functions + D1.
   - lock minutes
   - max users
 - New pool entry URLs use the query string:
-  - default room: `https://wc2026guess.xyz/`
+  - default room: `https://wc2026guess.xyz/?pool=main`
   - other rooms: `https://wc2026guess.xyz/?pool=room-slug`
+- The bare root `https://wc2026guess.xyz/` is now a neutral entry page.
+  - It no longer auto-enters the default room.
+  - Users must open a room-specific link to join a prediction room.
 
 ## Current Product Rules
 
@@ -191,6 +194,7 @@ Recent development included:
 - all matches rendered on one scroll page
 - anchor to today's section
 - custom domain use on `wc2026guess.xyz`
+- explicit room-only entry for the legacy default room using `?pool=main`
 - admin user management
 - admin user prediction overview
 - 24-hour visibility window for future matches

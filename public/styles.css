@@ -423,6 +423,14 @@ main {
   font-size: 18px;
 }
 
+.room-entry-block {
+  max-width: 720px;
+}
+
+.room-entry-block code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .transfer-row,
 .balance-row,
 .match-result-row,

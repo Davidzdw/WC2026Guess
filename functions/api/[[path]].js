@@ -131,7 +131,7 @@ async function getPools(db) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     isDefault: Boolean(row.is_default),
-    shareUrl: row.slug === DEFAULT_POOL_SLUG ? "/" : `/?pool=${encodeURIComponent(row.slug)}`,
+    shareUrl: `/?pool=${encodeURIComponent(row.slug)}`,
   }));
 }
 
@@ -152,7 +152,7 @@ async function resolvePool(db, { poolId, poolSlug } = {}) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     isDefault: Boolean(row.is_default),
-    shareUrl: row.slug === DEFAULT_POOL_SLUG ? "/" : `/?pool=${encodeURIComponent(row.slug)}`,
+    shareUrl: `/?pool=${encodeURIComponent(row.slug)}`,
   };
 }
 
